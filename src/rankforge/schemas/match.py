@@ -133,7 +133,55 @@ class MatchRead(MatchBase):
     id: int
     played_at: datetime
 
+    # Optimistic-locking version; clients echo it back as expected_version
+    # when updating the match.
+    version: int
+
     # The list of participants will use the "Read" schema to show full details.
     participants: list[MatchParticipantRead]
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MatchUpdate(BaseModel):
+    """Properties to receive when correcting a historical match.
+
+    The game cannot be changed (intentionally not a field). Updating
+    played_at or participants triggers a forward rating recalculation of
+    every subsequent match in the game.
+    """
+
+    # Optimistic locking: must match the match's current version.
+    expected_version: int = Field(
+        ..., ge=1, description="The match version this update was based on"
+    )
+
+    played_at: datetime | None = Field(
+        default=None, description="Corrected time the match was played"
+    )
+    match_metadata: dict | None = Field(
+        default=None, description="Replacement metadata (full replace, not merge)"
+    )
+    participants: list[MatchParticipantCreate] | None = Field(
+        default=None,
+        min_length=2,
+        description="Replacement participant list (full replace, not merge)",
+    )
+
+
+class RecalculationResult(BaseModel):
+    """Summary of the rating recalculation triggered by a match correction."""
+
+    matches_recalculated: int
+    players_affected: int
+
+
+class MatchUpdateResponse(BaseModel):
+    """Response for a match update: the new state plus recalculation summary.
+
+    recalculation is None when the update didn't affect ratings
+    (metadata-only changes).
+    """
+
+    match: MatchRead
+    recalculation: RecalculationResult | None = None

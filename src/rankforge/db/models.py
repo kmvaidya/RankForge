@@ -44,6 +44,11 @@ class RatingInfo(TypedDict):
     vol: float
 
 
+# Default rating for players who haven't played a game yet.
+# TODO: Make configurable per-game via a Game.default_rating_info column.
+DEFAULT_RATING_INFO: RatingInfo = {"rating": 1500.0, "rd": 350.0, "vol": 0.06}
+
+
 # ===============================================
 # Mixins for Common Columns
 # ===============================================
@@ -195,9 +200,10 @@ class Match(Base, TimestampMixin, VersionMixin, SoftDeleteMixin):
     game_id: Mapped[int] = mapped_column(
         ForeignKey("games.id"), nullable=False, index=True
     )
-    # Business timestamp: when the match was actually played
+    # Business timestamp: when the match was actually played.
+    # Indexed: the recalculation cascade and list endpoints query/sort on it.
     played_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc), index=True
     )
 
     # Pillar 3: Contextual Metadata

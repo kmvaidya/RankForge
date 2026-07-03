@@ -70,6 +70,48 @@ class GameProfileNotFoundError(ResourceNotFoundError):
         )
 
 
+class MatchNotFoundError(ResourceNotFoundError):
+    """Raised when a match ID does not exist (or has been deleted)."""
+
+    def __init__(self, match_id: int) -> None:
+        super().__init__(
+            message=f"Match with ID {match_id} not found",
+            details={"match_id": match_id},
+        )
+
+
+# =============================================================================
+# Conflict Errors (HTTP 409)
+# =============================================================================
+
+
+class ConflictError(RankForgeError):
+    """Base class for conflict errors (concurrent modification, etc.)."""
+
+    pass
+
+
+class ConcurrentModificationError(ConflictError):
+    """Raised when an update's expected_version doesn't match the record.
+
+    This implements optimistic locking: clients must send the version they
+    read; if another update happened in between, the versions won't match.
+    """
+
+    def __init__(self, expected_version: int, actual_version: int) -> None:
+        super().__init__(
+            message=(
+                f"Match was modified by another request "
+                f"(expected version {expected_version}, found {actual_version}). "
+                f"Re-fetch the match and retry."
+            ),
+            details={
+                "expected_version": expected_version,
+                "actual_version": actual_version,
+            },
+        )
+
+
 # =============================================================================
 # Validation Errors (HTTP 422)
 # =============================================================================
@@ -124,6 +166,23 @@ class InvalidOutcomeError(ParticipantValidationError):
         super().__init__(
             message=f"Invalid outcome for player {player_id}: {reason}",
             details={"player_id": player_id, "reason": reason},
+        )
+
+
+class MatchTooOldToUpdateError(ValidationError):
+    """Raised when a match is beyond the configured update-age threshold."""
+
+    def __init__(self, match_id: int, age_days: int, max_age_days: int) -> None:
+        super().__init__(
+            message=(
+                f"Match {match_id} is {age_days} days old and cannot be updated "
+                f"(maximum age: {max_age_days} days)"
+            ),
+            details={
+                "match_id": match_id,
+                "age_days": age_days,
+                "max_age_days": max_age_days,
+            },
         )
 
 

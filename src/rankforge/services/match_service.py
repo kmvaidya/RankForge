@@ -5,28 +5,43 @@
 from __future__ import annotations
 
 import logging
+import os
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from rankforge.db import models
+from rankforge.db.models import DEFAULT_RATING_INFO
 from rankforge.exceptions import (
+    ConcurrentModificationError,
     DuplicatePlayerError,
     GameNotFoundError,
     InsufficientParticipantsError,
     InsufficientTeamsError,
+    MatchNotFoundError,
+    MatchTooOldToUpdateError,
     PlayerNotFoundError,
 )
-from rankforge.rating import dummy_engine, glicko2_engine
+from rankforge.rating import get_rating_engine
 from rankforge.schemas import match as match_schema
+from rankforge.services import recalculation_service
+from rankforge.services.recalculation_service import (
+    RecalculationStats,
+    cascade_start_for,
+    normalize_played_at,
+)
 
 logger = logging.getLogger(__name__)
 
-# A default rating structure for new players in a game.
-# TODO: Move to Game model's 'default_rating_info' JSON column in Phase 1
-# This will allow per-game customization of initial ratings.
-DEFAULT_RATING_INFO = {"rating": 1500.0, "rd": 350.0, "vol": 0.06}
+__all__ = [
+    "DEFAULT_RATING_INFO",
+    "get_or_create_game_profile",
+    "process_new_match",
+    "update_match",
+    "soft_delete_match",
+]
 
 # The canonical name for the shared unknown player
 UNKNOWN_PLAYER_NAME = "Unknown"
@@ -52,7 +67,7 @@ async def get_or_create_game_profile(
         profile = models.GameProfile(
             player_id=player_id,
             game_id=game_id,
-            rating_info=DEFAULT_RATING_INFO,
+            rating_info=dict(DEFAULT_RATING_INFO),
             stats={},  # Start with empty stats
         )
         db.add(profile)
@@ -274,11 +289,8 @@ async def process_new_match(
             extra={"match_id": new_match.id, "strategy": game.rating_strategy},
         )
 
-        if game.rating_strategy == "glicko2":
-            await glicko2_engine.update_ratings_for_match(db, new_match)
-        else:
-            # Default to dummy engine for unknown strategies
-            await dummy_engine.update_ratings_for_match(db, new_match)
+        engine_fn = get_rating_engine(game.rating_strategy)
+        await engine_fn(db, new_match)
 
         # 8. COMMIT the entire transaction atomically (match + ratings together)
         await db.commit()
@@ -302,6 +314,241 @@ async def process_new_match(
         logger.error(
             "Failed to process match",
             extra={"game_id": match_in.game_id, "error": str(e)},
+            exc_info=True,
+        )
+        await db.rollback()
+        raise
+
+
+# =============================================================================
+# Match Correction (Update / Delete with Rating Cascade)
+# =============================================================================
+
+
+def _get_max_update_age_days() -> int:
+    """Read the update-age threshold from the environment. 0 disables it.
+
+    Defaults to 0 (unlimited) because RankForge's primary data source is
+    historical imports; set MATCH_UPDATE_MAX_AGE_DAYS to enforce immutability
+    of older matches.
+    """
+    try:
+        return int(os.getenv("MATCH_UPDATE_MAX_AGE_DAYS", "0"))
+    except ValueError:
+        return 0
+
+
+def _check_update_age(match: models.Match) -> None:
+    """Raise MatchTooOldToUpdateError if the match exceeds the age threshold."""
+    max_age_days = _get_max_update_age_days()
+    if max_age_days <= 0:
+        return
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    age_days = (now - normalize_played_at(match.played_at)).days
+    if age_days > max_age_days:
+        raise MatchTooOldToUpdateError(match.id, age_days, max_age_days)
+
+
+async def _load_match_for_correction(db: AsyncSession, match_id: int) -> models.Match:
+    """Load a live (non-deleted) match with participants, or raise 404."""
+    result = await db.execute(
+        select(models.Match)
+        .where(models.Match.id == match_id)
+        .options(selectinload(models.Match.participants))
+    )
+    match = result.scalar_one_or_none()
+    if match is None or match.deleted_at is not None:
+        raise MatchNotFoundError(match_id)
+    return match
+
+
+async def update_match(
+    db: AsyncSession,
+    match_id: int,
+    update: match_schema.MatchUpdate,
+) -> tuple[models.Match, RecalculationStats | None]:
+    """
+    Correct a historical match and recalculate all affected ratings.
+
+    Uses optimistic locking (update.expected_version must match the match's
+    current version). Changing played_at or participants triggers a forward
+    recalculation of every subsequent match in the game; metadata-only
+    updates skip recalculation.
+
+    The whole operation (mutation plus recalculation) is one transaction:
+    any failure rolls back everything.
+
+    Returns:
+        (updated match with relationships loaded, recalculation stats or
+        None if ratings were unaffected)
+
+    Raises:
+        MatchNotFoundError: If the match doesn't exist or is deleted
+        ConcurrentModificationError: If expected_version doesn't match
+        MatchTooOldToUpdateError: If beyond MATCH_UPDATE_MAX_AGE_DAYS
+        ParticipantValidationError subclasses: If new participants invalid
+    """
+    try:
+        match = await _load_match_for_correction(db, match_id)
+
+        # Optimistic locking check
+        if update.expected_version != match.version:
+            raise ConcurrentModificationError(update.expected_version, match.version)
+
+        _check_update_age(match)
+
+        old_played_at = match.played_at
+        new_played_at = (
+            update.played_at if update.played_at is not None else old_played_at
+        )
+        played_at_changed = normalize_played_at(new_played_at) != normalize_played_at(
+            old_played_at
+        )
+        participants_changed = update.participants is not None
+        needs_recalc = participants_changed or played_at_changed
+
+        logger.info(
+            "Updating match",
+            extra={
+                "match_id": match_id,
+                "participants_changed": participants_changed,
+                "played_at_changed": played_at_changed,
+            },
+        )
+
+        # Capture reset targets BEFORE mutating, while the window still
+        # reflects the original participants of this match.
+        reset_targets: dict[int, dict] = {}
+        cascade_start = None
+        if needs_recalc:
+            cascade_start = cascade_start_for(old_played_at, new_played_at)
+            reset_targets = await recalculation_service.capture_reset_targets(
+                db, match.game_id, cascade_start
+            )
+
+        # Validate replacement participants (after resolving unknowns)
+        if update.participants is not None:
+            await _resolve_unknown_players(db, update.participants)
+            unknown_result = await db.execute(
+                select(models.Player.id).where(
+                    models.Player.name == UNKNOWN_PLAYER_NAME
+                )
+            )
+            unknown_player_id = unknown_result.scalar_one_or_none()
+            await _validate_participants(db, update.participants, unknown_player_id)
+
+        # Apply the mutation
+        if update.played_at is not None:
+            match.played_at = update.played_at
+        if update.match_metadata is not None:
+            match.match_metadata = update.match_metadata
+        if update.participants is not None:
+            # Full replacement: delete-orphan cascade removes the old rows.
+            match.participants.clear()
+            await db.flush()
+            for participant_data in update.participants:
+                assert participant_data.player_id is not None
+                # Ensure a profile exists so replay can rate this player.
+                await get_or_create_game_profile(
+                    db,
+                    player_id=participant_data.player_id,
+                    game_id=match.game_id,
+                )
+                match.participants.append(
+                    models.MatchParticipant(**participant_data.model_dump())
+                )
+
+        match.version += 1
+        db.add(match)
+        await db.flush()
+
+        # Recalculate ratings forward from the cascade point
+        recalc_stats: RecalculationStats | None = None
+        if needs_recalc:
+            assert cascade_start is not None
+            recalc_stats = await recalculation_service.replay_matches(
+                db, match.game_id, cascade_start, reset_targets
+            )
+
+        await db.commit()
+        logger.info(
+            "Match updated",
+            extra={
+                "match_id": match_id,
+                "recalculated": (
+                    recalc_stats.matches_recalculated if recalc_stats else 0
+                ),
+            },
+        )
+
+        # Re-query with relationships eagerly loaded for the response
+        result = await db.execute(
+            select(models.Match)
+            .where(models.Match.id == match_id)
+            .options(
+                selectinload(models.Match.participants).selectinload(
+                    models.MatchParticipant.player
+                )
+            )
+        )
+        return result.scalar_one(), recalc_stats
+
+    except Exception as e:
+        logger.error(
+            "Failed to update match",
+            extra={"match_id": match_id, "error": str(e)},
+            exc_info=True,
+        )
+        await db.rollback()
+        raise
+
+
+async def soft_delete_match(db: AsyncSession, match_id: int) -> RecalculationStats:
+    """
+    Soft-delete a match and recalculate all affected ratings.
+
+    The match is marked deleted (preserving history) and every subsequent
+    match in the game is replayed as if the deleted match never happened.
+    Atomic: mutation and recalculation share one transaction.
+
+    Raises:
+        MatchNotFoundError: If the match doesn't exist or is already deleted
+    """
+    try:
+        match = await _load_match_for_correction(db, match_id)
+
+        cascade_start = cascade_start_for(match.played_at)
+
+        # Capture BEFORE deleting so the deleted match's own participants
+        # are reset to their pre-match ratings.
+        reset_targets = await recalculation_service.capture_reset_targets(
+            db, match.game_id, cascade_start
+        )
+
+        match.deleted_at = datetime.now(timezone.utc)
+        match.version += 1
+        db.add(match)
+        await db.flush()
+
+        recalc_stats = await recalculation_service.replay_matches(
+            db, match.game_id, cascade_start, reset_targets
+        )
+
+        await db.commit()
+        logger.info(
+            "Match soft-deleted",
+            extra={
+                "match_id": match_id,
+                "matches_recalculated": recalc_stats.matches_recalculated,
+            },
+        )
+        return recalc_stats
+
+    except Exception as e:
+        logger.error(
+            "Failed to delete match",
+            extra={"match_id": match_id, "error": str(e)},
             exc_info=True,
         )
         await db.rollback()

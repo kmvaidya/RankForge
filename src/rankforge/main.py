@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from .api import game, match, player
 from .db.session import engine
 from .exceptions import (
+    ConflictError,
     RankForgeError,
     RatingEngineError,
     ResourceNotFoundError,
@@ -62,6 +63,16 @@ async def validation_error_handler(
     logger.warning("Validation error: %s", exc.message, extra=exc.details)
     return JSONResponse(
         status_code=422,
+        content={"detail": exc.message, "error_type": type(exc).__name__},
+    )
+
+
+@app.exception_handler(ConflictError)
+async def conflict_error_handler(request: Request, exc: ConflictError) -> JSONResponse:
+    """Handle conflict errors (e.g., concurrent modification) -> 409."""
+    logger.warning("Conflict: %s", exc.message, extra=exc.details)
+    return JSONResponse(
+        status_code=409,
         content={"detail": exc.message, "error_type": type(exc).__name__},
     )
 

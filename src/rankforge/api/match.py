@@ -164,7 +164,7 @@ async def read_match(match_id: int, db: AsyncSession = Depends(get_db)) -> Match
     result = await db.execute(query)
     match = result.scalar_one_or_none()
 
-    if not match:
+    if not match or match.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Match with id {match_id} not found",
@@ -173,23 +173,54 @@ async def read_match(match_id: int, db: AsyncSession = Depends(get_db)) -> Match
     return match
 
 
+@router.put("/{match_id}", response_model=match_schema.MatchUpdateResponse)
+async def update_match(
+    match_id: int,
+    update_in: match_schema.MatchUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> match_schema.MatchUpdateResponse:
+    """
+    Correct a historical match and recalculate all affected ratings.
+
+    Changing played_at or participants triggers a forward recalculation of
+    every subsequent match in the game (replayed in chronological order).
+    Metadata-only updates skip recalculation.
+
+    Requires expected_version (from a prior GET) for optimistic locking.
+    The game of a match cannot be changed.
+
+    Raises:
+        404: If the match doesn't exist or is deleted
+        409: If expected_version doesn't match (concurrent modification)
+        422: If validation fails (participants, age threshold)
+    """
+    updated_match, recalc_stats = await match_service.update_match(
+        db, match_id, update_in
+    )
+
+    recalculation = None
+    if recalc_stats is not None:
+        recalculation = match_schema.RecalculationResult(
+            matches_recalculated=recalc_stats.matches_recalculated,
+            players_affected=recalc_stats.players_affected,
+        )
+
+    return match_schema.MatchUpdateResponse(
+        match=match_schema.MatchRead.model_validate(updated_match),
+        recalculation=recalculation,
+    )
+
+
 @router.delete("/{match_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_match(match_id: int, db: AsyncSession = Depends(get_db)) -> None:
     """
-    Delete a match by its ID.
+    Soft-delete a match and recalculate all affected ratings.
+
+    The match is marked deleted (preserving audit history) and every
+    subsequent match in the game is replayed as if it never happened.
+
+    Raises:
+        404: If the match doesn't exist or is already deleted
     """
-    # Fetch the match to delete
-    match_to_delete = await db.get(Match, match_id)
-    if not match_to_delete:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Match with id {match_id} not found",
-        )
-
-    # Delete from the database. Thanks to `cascade="all, delete-orphan"` in our
-    # `models.py` relationship, SQLAlchemy will automatically delete all
-    # associated MatchParticipant records as well.
-    await db.delete(match_to_delete)
-    await db.commit()
-
+    await match_service.soft_delete_match(db, match_id)
     return None
