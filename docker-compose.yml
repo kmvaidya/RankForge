@@ -50,6 +50,7 @@ services:
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
       DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-3600}
       DB_ECHO: ${DB_ECHO:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:4173,http://localhost:3000}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -59,6 +60,22 @@ services:
       - rankforge-network
     # Override command for development with hot reload
     command: ["uvicorn", "rankforge.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # ---------------------------------------------------------------------------
+  # Frontend (nginx serving the built SPA, proxying /api to the backend)
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: rankforge-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    networks:
+      - rankforge-network
 
   # ---------------------------------------------------------------------------
   # Database Migrations (run once, then exit)

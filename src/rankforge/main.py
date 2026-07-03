@@ -3,9 +3,11 @@
 """Main FastAPI application for RankForge."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -19,8 +21,19 @@ from .exceptions import (
     ValidationError,
 )
 from .middleware.logging import RequestLoggingMiddleware
+from .middleware.security import SecurityHeadersMiddleware
 
 logger = logging.getLogger(__name__)
+
+
+def cors_origins() -> list[str]:
+    """Allowed CORS origins, comma-separated in CORS_ORIGINS.
+
+    Defaults cover the Vite dev (5173) and preview (4173) servers. Set the
+    deployed frontend's origin in production.
+    """
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:4173")
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 @asynccontextmanager
@@ -36,6 +49,14 @@ app = FastAPI(title="RankForge API", lifespan=lifespan)
 
 # Add middleware (order matters - first added = outermost)
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # =============================================================================
