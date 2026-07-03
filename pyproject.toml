@@ -15,8 +15,9 @@ dependencies = [
     "alembic",
     "pydantic",
     "python-dotenv",
+    "asyncpg",
     "psycopg2-binary",
-    "aiosqlite"
+    "aiosqlite",
 ]
 
 # ===============================
@@ -33,9 +34,11 @@ dev = [
 ]
 
 [tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
 # Enable Pyflakes, pycodestyle, and isort rules.
 select = ["E", "F", "I"]
-line-length = 88
 
 [tool.ruff.format]
 quote-style = "double"

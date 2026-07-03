@@ -1,0 +1,97 @@
+# =============================================================================
+# RankForge Docker Compose Configuration
+# =============================================================================
+# Usage:
+#   Development: docker compose up
+#   Production:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 Database
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: rankforge-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rankforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rankforge_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-rankforge}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rankforge} -d ${POSTGRES_DB:-rankforge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - rankforge-network
+
+  # ---------------------------------------------------------------------------
+  # RankForge API Application
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rankforge-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database configuration for PostgreSQL
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rankforge}:${POSTGRES_PASSWORD:-rankforge_dev}@db:5432/${POSTGRES_DB:-rankforge}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+      DB_POOL_RECYCLE: ${DB_POOL_RECYCLE:-3600}
+      DB_ECHO: ${DB_ECHO:-false}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Development: mount source code for hot reload
+      - ./src:/app/src:ro
+    networks:
+      - rankforge-network
+    # Override command for development with hot reload
+    command: ["uvicorn", "rankforge.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # ---------------------------------------------------------------------------
+  # Database Migrations (run once, then exit)
+  # ---------------------------------------------------------------------------
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rankforge-migrations
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-rankforge}:${POSTGRES_PASSWORD:-rankforge_dev}@db:5432/${POSTGRES_DB:-rankforge}
+    volumes:
+      - ./src:/app/src:ro
+      - ./alembic.ini:/app/alembic.ini:ro
+    networks:
+      - rankforge-network
+    command: ["alembic", "upgrade", "head"]
+    profiles:
+      - tools
+
+# -----------------------------------------------------------------------------
+# Volumes
+# -----------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    driver: local
+
+# -----------------------------------------------------------------------------
+# Networks
+# -----------------------------------------------------------------------------
+networks:
+  rankforge-network:
+    driver: bridge

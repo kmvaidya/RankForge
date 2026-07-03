@@ -1,0 +1,60 @@
+# =============================================================================
+# RankForge Docker Ignore
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Testing/Coverage
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Build artifacts
+*.egg
+*.whl
+dist/
+build/
+
+# Local development files
+*.db
+*.sqlite
+.env
+.env.local
+
+# Documentation/Data
+data/
+scripts/
+tests/
+docs/
+
+# Misc
+*.log
+output.txt
+nul
+
+# Plan files
+.claude/

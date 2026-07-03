@@ -1,0 +1,27 @@
+# =============================================================================
+# RankForge Docker Compose - Production Overrides
+# =============================================================================
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# =============================================================================
+
+services:
+  api:
+    # Remove volume mounts for production (use built image)
+    volumes: []
+    # Production command without hot reload, with multiple workers
+    command: ["uvicorn", "rankforge.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+    # Restart policy for production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  db:
+    restart: always
+    # In production, don't expose port externally
+    ports: []

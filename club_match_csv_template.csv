@@ -1,12 +1,13 @@
-,,,Notes:,"Remove the rows that do not have match data (rows 1-10), including the header row, prior to import",,,,,,,,,,,,,,,,,,,,,,,,
-,,,,"Specify match type as ""S"" for singles or ""D"" for doubles",,,,,,,,,,,,,,,,,,,,,,,,
-,,,,Include your event name with division and any other details you'd like to include,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,Date format should be YYYY-MM-DD,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,Player DUPR IDs must be an exact match. The DUPR ID can be copy/pasted from a player's profile.,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,Player names do not need to be an exact match. Only the DUPR ID is used to validate a player.,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,Leave the External ID column blank,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,"Do NOT delete blank columns (A, B, C, S)",,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-<leave empty>,<leave empty>,<leave empty>,matchType,event,date,playerA1,playerA1DuprId,playerA1ExternalId,playerA2,playerA2DuprId,playerA2ExternalId,playerB1,playerB1DuprId,playerB1ExternalId,playerB2,playerB2DuprId,playerB2ExternalId,<leave empty>,teamAGame1,teamBGame1,teamAGame2,teamBGame2,teamAGame3,teamBGame3,teamAGame4,teamBGame4,teamAGame5,teamBGame5
-,,,S,Fun Pickleball Tournament - 3.5 Divison - Age 18 to 35,2023-11-03,Firstname Lastname,BK5V6D,,,,,Firstname Lastname,BK5V6D,,,,,,11,4,7,11,11,5,,,,
-,,,D,Match Club Doubles,2023-11-03,Firstname Lastname,BK5V6D,,Firstname Lastname,BK5V6D,,Firstname Lastname,BK5V6D,,Firstname Lastname,BK5V6D,,,11,4,7,11,11,5,11,8,11,10
+Notes:,matchType," ""S"" for singles, ""D"" for doubles",,,,,,,,,,,,,,,,,,,
+,scoreType,"""SIDEOUT"" or ""RALLY""",,,,,,,,,,,,,,,,,,,
+,event,Tournament and Bracket name,,,,,,,,,,,,,,,,,,,
+,date,YYYY-MM-DD format,,,,,,,,,,,,,,,,,,,
+,playerXX,"Optional name field, not used for validation",,,,,,,,,,,,,,,,,,,
+,playerXXDuprId,Must be exact match. Tip: Copy/Paste from player's profile,,,,,,,,,,,,,,,,,,,
+,teamXGameX,Leave unplayed games blank,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,
+Before importing: Remove rows that do not have match or header data (rows 1-10),,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,
+matchType,scoreType,event,date,playerA1,playerA1DuprId,playerA2,playerA2DuprId,playerB1,playerB1DuprId,playerB2,playerB2DuprId,teamAGame1,teamBGame1,teamAGame2,teamBGame2,teamAGame3,teamBGame3,teamAGame4,teamBGame4,teamAGame5,teamBGame5
+S,RALLY,Fun Pickleball Tournament - 3.5 Divison - Age 18 to 35,2023-11-03,Firstname Lastname,BK5V6D,,,Firstname Lastname,BK5V6D,,,11,4,7,11,11,5,,,,
+D,SIDEOUT,Match Club Doubles,2023-11-03,Firstname Lastname,BK5V6D,Firstname Lastname,BK5V6D,Firstname Lastname,BK5V6D,Firstname Lastname,BK5V6D,11,4,7,11,11,5,11,8,11,10
