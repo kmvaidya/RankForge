@@ -78,6 +78,12 @@ A **backdated** match (played_at earlier than an existing match) is inserted
 un-rated and the affected window is replayed instead, so out-of-order
 imports produce the same ratings as chronological entry.
 
+A match may carry `match_metadata.weight` (positive number, default 1.0).
+The Glicko-2 engine scales the match's contribution to the variance and
+improvement sums by it — mathematically equivalent to playing `weight`
+copies of the game. Use `0 < w < 1` for casual/partial games, `w > 1` for
+high-stakes events. Invalid weights fail the match atomically.
+
 All datetimes are stored as **naive UTC** (`models.utcnow_naive`, schema
 validators normalize client input): asyncpg rejects aware values on naive
 columns, and SQLite's lexical datetime comparison would corrupt replay

@@ -50,9 +50,17 @@ class Glicko2Engine:
         self,
         player_rating: Glicko2Rating,
         opponent_ratings_and_outcomes: list[tuple[Glicko2Rating, float]],
+        weight: float = 1.0,
     ) -> Glicko2Rating:
         """
         Calculates a player's new rating based on a series of match outcomes.
+
+        ``weight`` scales how much information the outcomes carry: each
+        opponent's contribution to the variance and improvement sums is
+        multiplied by it, which is mathematically equivalent to having
+        played ``weight`` copies of each game. 1.0 is a normal game,
+        0.5 counts as half a game, 5.0 as five games. As weight approaches
+        0 the match has no effect on the rating.
         """
         # Step 1 & 2: Convert to Glicko-2 scale
         mu = (player_rating.mu - 1500) / self._glicko_scale_constant
@@ -66,10 +74,10 @@ class Glicko2Engine:
             return Glicko2Rating(player_rating.mu, new_phi, player_rating.sigma)
 
         # Step 3: Compute the estimated variance of the player's rating
-        v = self._compute_v(mu, opponent_ratings_and_outcomes)
+        v = self._compute_v(mu, opponent_ratings_and_outcomes, weight)
 
         # Step 4: Compute the estimated improvement in rating
-        delta = self._compute_delta(mu, v, opponent_ratings_and_outcomes)
+        delta = self._compute_delta(mu, v, opponent_ratings_and_outcomes, weight)
 
         # Step 5: Determine the new volatility
         sigma_prime = self._compute_new_sigma(delta, phi, v, sigma)
@@ -80,7 +88,7 @@ class Glicko2Engine:
         # Step 7: Update the rating and rating deviation
         phi_prime = 1 / math.sqrt(1 / phi_star**2 + 1 / v)
         mu_prime = mu + phi_prime**2 * self._sum_g_phi_j(
-            mu, opponent_ratings_and_outcomes
+            mu, opponent_ratings_and_outcomes, weight
         )
 
         # Step 8: Convert back to the original Glicko scale
@@ -98,27 +106,33 @@ class Glicko2Engine:
         return 1 / (1 + math.exp(-self._g(phi_j) * (mu - mu_j)))
 
     def _compute_v(
-        self, mu: float, opponent_ratings: list[tuple[Glicko2Rating, float]]
+        self,
+        mu: float,
+        opponent_ratings: list[tuple[Glicko2Rating, float]],
+        weight: float = 1.0,
     ) -> float:
-        """Computes the estimated variance `v`."""
+        """Computes the estimated variance `v` (contributions scaled by weight)."""
         v_inv = 0.0
         for opponent, _ in opponent_ratings:
             mu_j = (opponent.mu - 1500) / self._glicko_scale_constant
             phi_j = opponent.phi / self._glicko_scale_constant
             g_phi_j = self._g(phi_j)
             E = self._E(mu, mu_j, phi_j)
-            v_inv += g_phi_j**2 * E * (1 - E)
+            v_inv += weight * g_phi_j**2 * E * (1 - E)
         return 1 / v_inv if v_inv != 0 else 0
 
     def _sum_g_phi_j(
-        self, mu: float, opponent_ratings: list[tuple[Glicko2Rating, float]]
+        self,
+        mu: float,
+        opponent_ratings: list[tuple[Glicko2Rating, float]],
+        weight: float = 1.0,
     ) -> float:
         """Helper to compute a sum used in delta and mu' calculation."""
         total = 0.0
         for opponent, score in opponent_ratings:
             mu_j = (opponent.mu - 1500) / self._glicko_scale_constant
             phi_j = opponent.phi / self._glicko_scale_constant
-            total += self._g(phi_j) * (score - self._E(mu, mu_j, phi_j))
+            total += weight * self._g(phi_j) * (score - self._E(mu, mu_j, phi_j))
         return total
 
     def _compute_delta(
@@ -126,9 +140,10 @@ class Glicko2Engine:
         mu: float,
         v: float,
         opponent_ratings: list[tuple[Glicko2Rating, float]],
+        weight: float = 1.0,
     ) -> float:
         """Computes the estimated improvement `delta`."""
-        return v * self._sum_g_phi_j(mu, opponent_ratings)
+        return v * self._sum_g_phi_j(mu, opponent_ratings, weight)
 
     def _compute_new_sigma(
         self, delta: float, phi: float, v: float, sigma: float
@@ -180,6 +195,25 @@ class Glicko2Engine:
 # ===============================================
 # == RankForge Integration
 # ===============================================
+
+
+def _match_weight(match: models.Match) -> float:
+    """Extract the match weight from ``match_metadata`` (default 1.0).
+
+    A weighted match counts as ``weight`` games' worth of information:
+    partial or casual games can carry less than a full game (0 < w < 1),
+    special events more (w > 1).
+
+    Raises:
+        RatingCalculationError: If the stored weight is not a positive number.
+    """
+    raw = (match.match_metadata or {}).get("weight", 1.0)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw <= 0:
+        raise RatingCalculationError(
+            f"Invalid match weight {raw!r} on match {match.id}: "
+            "must be a positive number"
+        )
+    return float(raw)
 
 
 def _calculate_player_scores(match: models.Match) -> dict[int, float]:
@@ -290,6 +324,7 @@ async def update_ratings_for_match(db: AsyncSession, match: models.Match) -> Non
     # 2. Calculate a normalized performance score for each player from the match outcome
     # This may raise NonCompetitiveMatchError or RatingCalculationError
     player_scores = _calculate_player_scores(match)
+    weight = _match_weight(match)
     new_ratings: dict[int, Glicko2Rating] = {}
 
     # 3. For each player, calculate their new rating
@@ -320,7 +355,7 @@ async def update_ratings_for_match(db: AsyncSession, match: models.Match) -> Non
 
         # Calculate the new rating
         current_rating = player_ratings[p1.player_id]
-        new_ratings[p1.player_id] = engine.rate(current_rating, opponents_data)
+        new_ratings[p1.player_id] = engine.rate(current_rating, opponents_data, weight)
 
     # 4. Persist the new ratings to the database
     for p in match.participants:
