@@ -8,7 +8,9 @@ import logging
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy import update as sql_update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -183,10 +185,13 @@ async def _validate_participants(
     if len(team_ids) < 2:
         raise InsufficientTeamsError(len(team_ids))
 
-    # Validate all players exist (single query for efficiency)
+    # Validate all players exist and are not soft-deleted (single query)
     non_null_ids = [pid for pid in player_ids if pid is not None]
     if non_null_ids:
-        query = select(models.Player.id).where(models.Player.id.in_(non_null_ids))
+        query = select(models.Player.id).where(
+            models.Player.id.in_(non_null_ids),
+            models.Player.deleted_at.is_(None),
+        )
         result = await db.execute(query)
         existing_ids = set(result.scalars().all())
 
@@ -196,6 +201,37 @@ async def _validate_participants(
             raise PlayerNotFoundError(min(missing_ids))
 
     logger.debug("Participant validation passed")
+
+
+async def _resolve_and_validate_participants(
+    db: AsyncSession,
+    participants: list[match_schema.MatchParticipantCreate],
+) -> None:
+    """Resolve unknown players, then validate the participant list.
+
+    Shared by match creation and match correction so both paths enforce
+    identical rules.
+    """
+    await _resolve_unknown_players(db, participants)
+    result = await db.execute(
+        select(models.Player.id).where(models.Player.name == UNKNOWN_PLAYER_NAME)
+    )
+    unknown_player_id = result.scalar_one_or_none()
+    await _validate_participants(db, participants, unknown_player_id)
+
+
+async def _load_match_with_players(db: AsyncSession, match_id: int) -> models.Match:
+    """Load a match with participants and their players eagerly loaded."""
+    result = await db.execute(
+        select(models.Match)
+        .where(models.Match.id == match_id)
+        .options(
+            selectinload(models.Match.participants).selectinload(
+                models.MatchParticipant.player
+            )
+        )
+    )
+    return result.scalar_one()
 
 
 async def process_new_match(
@@ -240,19 +276,39 @@ async def process_new_match(
             extra={"game_id": game.id, "rating_strategy": game.rating_strategy},
         )
 
-        # 2. Resolve participants with player_id=None to the shared Unknown player
-        await _resolve_unknown_players(db, match_in.participants)
+        # 2-4. Resolve unknown players, then validate the participant list
+        await _resolve_and_validate_participants(db, match_in.participants)
 
-        # 3. Get the Unknown player ID for validation (if it exists)
-        #    The Unknown player is exempt from duplicate checking
-        query = select(models.Player.id).where(
-            models.Player.name == UNKNOWN_PLAYER_NAME
+        # 4b. Detect a backdated match: one played earlier than an existing
+        #     match in this game. Applying ratings at insertion time would
+        #     break chronological consistency, so backdated matches are
+        #     inserted un-rated and the whole affected window is replayed.
+        new_played_at = (
+            normalize_played_at(match_in.played_at)
+            if match_in.played_at is not None
+            else None
         )
-        result = await db.execute(query)
-        unknown_player_id = result.scalar_one_or_none()
+        latest_result = await db.execute(
+            select(func.max(models.Match.played_at)).where(
+                models.Match.game_id == match_in.game_id,
+                models.Match.deleted_at.is_(None),
+            )
+        )
+        latest_played_at = latest_result.scalar_one_or_none()
+        backdated = (
+            new_played_at is not None
+            and latest_played_at is not None
+            and new_played_at < normalize_played_at(latest_played_at)
+        )
 
-        # 4. Validate participants AFTER unknown player resolution
-        await _validate_participants(db, match_in.participants, unknown_player_id)
+        cascade_start = None
+        reset_targets: dict[int, dict] = {}
+        if backdated:
+            assert new_played_at is not None
+            cascade_start = cascade_start_for(new_played_at)
+            reset_targets = await recalculation_service.capture_reset_targets(
+                db, match_in.game_id, cascade_start
+            )
 
         # 5. Create the database models from the input schema.
         #    Exclude 'participants' as it's a list of schemas, not a direct field.
@@ -286,39 +342,42 @@ async def process_new_match(
         await db.flush()
         await db.refresh(new_match, attribute_names=["participants"])
 
-        # 7. DISPATCHER: Trigger the correct rating update process.
-        #    Rating engines use flush(), not commit(), to allow atomic transactions.
-        logger.info(
-            "Dispatching to rating engine",
-            extra={"match_id": new_match.id, "strategy": game.rating_strategy},
-        )
+        if backdated:
+            # 7-alt. Replay the affected window in chronological order; the
+            # new match is rated in its correct historical position and all
+            # subsequent ratings/stats are rewritten.
+            assert cascade_start is not None
+            logger.info(
+                "Backdated match: replaying affected window",
+                extra={"match_id": new_match.id, "game_id": match_in.game_id},
+            )
+            await recalculation_service.replay_matches(
+                db, match_in.game_id, cascade_start, reset_targets
+            )
+        else:
+            # 7. DISPATCHER: Trigger the correct rating update process.
+            #    Rating engines use flush(), not commit(), to allow atomic
+            #    transactions.
+            logger.info(
+                "Dispatching to rating engine",
+                extra={"match_id": new_match.id, "strategy": game.rating_strategy},
+            )
 
-        engine_fn = get_rating_engine(game.rating_strategy)
-        await engine_fn(db, new_match)
+            engine_fn = get_rating_engine(game.rating_strategy)
+            await engine_fn(db, new_match)
 
-        # 7b. Update win/loss/draw stats (service-owned; engines only touch
-        #     rating_info)
-        for profile, participant in profiles_by_participant:
-            stats_service.apply_match_stats(profile, participant.outcome)
-            db.add(profile)
+            # 7b. Update win/loss/draw stats (service-owned; engines only
+            #     touch rating_info)
+            for profile, participant in profiles_by_participant:
+                stats_service.apply_match_stats(profile, participant.outcome)
+                db.add(profile)
 
         # 8. COMMIT the entire transaction atomically (match + ratings together)
         await db.commit()
         logger.info("Match processed successfully", extra={"match_id": new_match.id})
 
         # 9. Re-query the match to eager load all relationships for the response.
-        match_result = await db.execute(
-            select(models.Match)
-            .where(models.Match.id == new_match.id)
-            .options(
-                selectinload(models.Match.participants).selectinload(
-                    models.MatchParticipant.player
-                )
-            )
-        )
-        created_match = match_result.scalar_one()
-
-        return created_match
+        return await _load_match_with_players(db, new_match.id)
 
     except Exception as e:
         logger.error(
@@ -401,20 +460,34 @@ async def update_match(
     """
     try:
         match = await _load_match_for_correction(db, match_id)
-
-        # Optimistic locking check
-        if update.expected_version != match.version:
-            raise ConcurrentModificationError(update.expected_version, match.version)
-
         _check_update_age(match)
 
+        # Optimistic locking via atomic compare-and-swap: bump the version
+        # only if it still matches expected_version. Under concurrency the
+        # row lock serializes updaters; the loser matches zero rows and gets
+        # a 409 instead of silently overwriting the winner.
+        claim: CursorResult = await db.execute(  # type: ignore[assignment]
+            sql_update(models.Match)
+            .where(
+                models.Match.id == match_id,
+                models.Match.version == update.expected_version,
+            )
+            .values(version=models.Match.version + 1)
+        )
+        if claim.rowcount != 1:
+            await db.refresh(match)
+            raise ConcurrentModificationError(update.expected_version, match.version)
+        await db.refresh(match)  # pick up the bumped version
+
         old_played_at = match.played_at
+        # Schema validators normalize to naive UTC; normalize again
+        # defensively for direct service callers.
         new_played_at = (
-            update.played_at if update.played_at is not None else old_played_at
+            normalize_played_at(update.played_at)
+            if update.played_at is not None
+            else old_played_at
         )
-        played_at_changed = normalize_played_at(new_played_at) != normalize_played_at(
-            old_played_at
-        )
+        played_at_changed = new_played_at != normalize_played_at(old_played_at)
         participants_changed = update.participants is not None
         needs_recalc = participants_changed or played_at_changed
 
@@ -439,18 +512,10 @@ async def update_match(
 
         # Validate replacement participants (after resolving unknowns)
         if update.participants is not None:
-            await _resolve_unknown_players(db, update.participants)
-            unknown_result = await db.execute(
-                select(models.Player.id).where(
-                    models.Player.name == UNKNOWN_PLAYER_NAME
-                )
-            )
-            unknown_player_id = unknown_result.scalar_one_or_none()
-            await _validate_participants(db, update.participants, unknown_player_id)
+            await _resolve_and_validate_participants(db, update.participants)
 
-        # Apply the mutation
-        if update.played_at is not None:
-            match.played_at = update.played_at
+        # Apply the mutation (version was already bumped by the CAS claim)
+        match.played_at = new_played_at
         if update.match_metadata is not None:
             match.match_metadata = update.match_metadata
         if update.participants is not None:
@@ -469,7 +534,6 @@ async def update_match(
                     models.MatchParticipant(**participant_data.model_dump())
                 )
 
-        match.version += 1
         db.add(match)
         await db.flush()
 
@@ -493,16 +557,7 @@ async def update_match(
         )
 
         # Re-query with relationships eagerly loaded for the response
-        result = await db.execute(
-            select(models.Match)
-            .where(models.Match.id == match_id)
-            .options(
-                selectinload(models.Match.participants).selectinload(
-                    models.MatchParticipant.player
-                )
-            )
-        )
-        return result.scalar_one(), recalc_stats
+        return await _load_match_with_players(db, match_id), recalc_stats
 
     except Exception as e:
         logger.error(
@@ -536,7 +591,7 @@ async def soft_delete_match(db: AsyncSession, match_id: int) -> RecalculationSta
             db, match.game_id, cascade_start
         )
 
-        match.deleted_at = datetime.now(timezone.utc)
+        match.deleted_at = models.utcnow_naive()
         match.version += 1
         db.add(match)
         await db.flush()

@@ -643,3 +643,191 @@ async def test_recalculate_game_heals_corrupted_data(async_client: AsyncClient):
 async def test_recalculate_nonexistent_game_returns_404(async_client: AsyncClient):
     res = await async_client.post("/games/999999/recalculate")
     assert res.status_code == 404
+
+
+# =============================================================================
+# Review regression tests (2026-07-03 multi-angle review findings)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_timezone_aware_played_at_is_normalized_and_cascades(
+    async_client: AsyncClient,
+):
+    """A match sent with a non-UTC offset must be stored as naive UTC so the
+    cascade window (SQL comparison) still includes it.
+
+    Regression: '2025-01-01T03:00:00-08:00' (= 11:00 UTC) stored verbatim
+    compared lexically below a naive boundary and was silently dropped from
+    replay."""
+    game_id = await create_game(async_client, "MU TZ Game")
+    p1 = await create_player(async_client, "MU TZ P1")
+    p2 = await create_player(async_client, "MU TZ P2")
+
+    m1 = await create_match(
+        async_client,
+        game_id,
+        p1,
+        p2,
+        played_at=datetime(2025, 1, 1, 10, 0, 0),  # naive
+    )
+    # Played chronologically AFTER m1 (11:00 UTC), sent with a -08:00 offset
+    m2_res = await async_client.post(
+        "/matches/",
+        json={
+            "game_id": game_id,
+            "played_at": "2025-01-01T03:00:00-08:00",
+            "participants": [
+                {"player_id": p1, "team_id": 1, "outcome": {"result": "win"}},
+                {"player_id": p2, "team_id": 2, "outcome": {"result": "loss"}},
+            ],
+        },
+    )
+    assert m2_res.status_code == 201
+    # Stored/returned as naive UTC
+    assert m2_res.json()["played_at"] == "2025-01-01T11:00:00"
+
+    # Correcting m1 must replay BOTH matches
+    res = await async_client.put(
+        f"/matches/{m1['id']}",
+        json={
+            "expected_version": m1["version"],
+            "participants": [
+                {"player_id": p2, "team_id": 1, "outcome": {"result": "win"}},
+                {"player_id": p1, "team_id": 2, "outcome": {"result": "loss"}},
+            ],
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["recalculation"]["matches_recalculated"] == 2
+
+
+@pytest.mark.asyncio
+async def test_swapped_in_player_gets_stats(async_client: AsyncClient):
+    """A player added to a match via PUT must get stats, not just a rating.
+
+    Regression: rebuild scope was captured pre-mutation, skipping new
+    participants."""
+    game_id = await create_game(async_client, "MU SwapStats Game")
+    a = await create_player(async_client, "MU SwapStats A")
+    b = await create_player(async_client, "MU SwapStats B")
+    c = await create_player(async_client, "MU SwapStats C")
+    m1 = await create_match(async_client, game_id, a, b, played_at=BASE_TIME)
+
+    res = await async_client.put(
+        f"/matches/{m1['id']}",
+        json={
+            "expected_version": m1["version"],
+            "participants": [
+                {"player_id": a, "team_id": 1, "outcome": {"result": "win"}},
+                {"player_id": c, "team_id": 2, "outcome": {"result": "loss"}},
+            ],
+        },
+    )
+    assert res.status_code == 200
+    # a, b (removed), and c (added) are all affected
+    assert res.json()["recalculation"]["players_affected"] == 3
+
+    c_stats = (await async_client.get(f"/players/{c}/stats")).json()
+    assert c_stats["total_matches"] == 1
+    assert c_stats["total_losses"] == 1
+    b_stats = (await async_client.get(f"/players/{b}/stats")).json()
+    assert b_stats["total_matches"] == 0
+
+
+@pytest.mark.asyncio
+async def test_backdated_match_creation_replays_history(async_client: AsyncClient):
+    """Creating a match earlier than existing matches must replay the window
+    so ratings equal chronological entry.
+
+    Regression: backdated matches were rated against current profiles and
+    only appended, silently corrupting history until a manual recalculate."""
+    game_id = await create_game(async_client, "MU Backdate Game")
+    a = await create_player(async_client, "MU Backdate A")
+    b = await create_player(async_client, "MU Backdate B")
+
+    # Entered out of order: the later match first
+    await create_match(
+        async_client, game_id, a, b, played_at=BASE_TIME + timedelta(hours=1)
+    )
+    await create_match(async_client, game_id, b, a, played_at=BASE_TIME)
+
+    # Control: same history entered chronologically
+    control_id = await create_game(async_client, "MU Backdate Control")
+    ca = await create_player(async_client, "MU BackdateCtrl A")
+    cb = await create_player(async_client, "MU BackdateCtrl B")
+    await create_match(async_client, control_id, cb, ca, played_at=BASE_TIME)
+    await create_match(
+        async_client, control_id, ca, cb, played_at=BASE_TIME + timedelta(hours=1)
+    )
+
+    actual = await get_ratings_by_player(async_client, game_id)
+    expected = await get_ratings_by_player(async_client, control_id)
+    assert_ratings_equal(actual, expected, {a: ca, b: cb})
+
+
+@pytest.mark.asyncio
+async def test_soft_deleted_player_rejected_in_new_match(
+    async_client: AsyncClient, db_session
+):
+    """Soft-deleted players must not be recordable into new matches."""
+    from rankforge.db import models
+
+    game_id = await create_game(async_client, "MU DelPlayer Game")
+    p1 = await create_player(async_client, "MU DelPlayer P1")
+    p2 = await create_player(async_client, "MU DelPlayer P2")
+
+    # Soft-delete p2 directly (the API currently hard-deletes)
+    player = await db_session.get(models.Player, p2)
+    player.deleted_at = models.utcnow_naive()
+    await db_session.commit()
+
+    res = await async_client.post(
+        "/matches/",
+        json={
+            "game_id": game_id,
+            "participants": [
+                {"player_id": p1, "team_id": 1, "outcome": {"result": "win"}},
+                {"player_id": p2, "team_id": 2, "outcome": {"result": "loss"}},
+            ],
+        },
+    )
+    assert res.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stats_rebuild_preserves_custom_keys(
+    async_client: AsyncClient, db_session
+):
+    """A correction-triggered stats rebuild must not destroy game-specific
+    custom stats keys (the schema documents them as supported)."""
+    from sqlalchemy import select as sa_select
+
+    from rankforge.db import models
+
+    game_id = await create_game(async_client, "MU CustomStats Game")
+    p1 = await create_player(async_client, "MU CustomStats P1")
+    p2 = await create_player(async_client, "MU CustomStats P2")
+    await create_match(async_client, game_id, p1, p2, played_at=BASE_TIME)
+    m2 = await create_match(
+        async_client, game_id, p1, p2, played_at=BASE_TIME + timedelta(hours=1)
+    )
+
+    # Plant a custom stats key (e.g. from an import script)
+    profile = (
+        await db_session.execute(
+            sa_select(models.GameProfile).where(
+                models.GameProfile.player_id == p1,
+                models.GameProfile.game_id == game_id,
+            )
+        )
+    ).scalar_one()
+    profile.stats = {**profile.stats, "spymaster_wins": 4}
+    await db_session.commit()
+
+    # Trigger a rebuild via deletion
+    assert (await async_client.delete(f"/matches/{m2['id']}")).status_code == 204
+
+    await db_session.refresh(profile)
+    assert profile.stats["spymaster_wins"] == 4
+    assert profile.stats["matches_played"] == 1

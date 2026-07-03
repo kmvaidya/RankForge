@@ -2,13 +2,27 @@
 
 """Pydantic schemas for the Match resource."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .common import RatingInfo
 from .player import PlayerRead
+
+
+def _to_naive_utc(dt: datetime | None) -> datetime | None:
+    """Normalize incoming datetimes to naive UTC at the schema boundary.
+
+    The database stores naive UTC everywhere: asyncpg rejects aware values
+    on naive columns, and SQLite compares datetimes as strings, so an
+    offset-suffixed value would corrupt played_at ordering and the
+    recalculation window.
+    """
+    if dt is not None and dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
+
 
 # ===============================================
 # == Outcome Schema Variants
@@ -126,6 +140,8 @@ class MatchCreate(MatchBase):
 
     participants: list[MatchParticipantCreate]
 
+    _normalize_played_at = field_validator("played_at")(_to_naive_utc)
+
 
 class MatchRead(MatchBase):
     """Properties to return to the client for a match."""
@@ -167,6 +183,8 @@ class MatchUpdate(BaseModel):
         min_length=2,
         description="Replacement participant list (full replace, not merge)",
     )
+
+    _normalize_played_at = field_validator("played_at")(_to_naive_utc)
 
 
 class RecalculationResult(BaseModel):

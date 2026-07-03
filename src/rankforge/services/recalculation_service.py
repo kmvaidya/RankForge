@@ -111,21 +111,41 @@ async def capture_reset_targets(
     return reset_targets
 
 
-async def _get_or_create_profile(
-    db: AsyncSession, player_id: int, game_id: int
-) -> models.GameProfile:
-    """Fetch a profile, creating it with default rating if missing."""
-    profile = await models.GameProfile.find_by_player_and_game(db, player_id, game_id)
-    if profile is None:
-        profile = models.GameProfile(
-            player_id=player_id,
-            game_id=game_id,
-            rating_info=dict(DEFAULT_RATING_INFO),
-            stats={},
+async def _load_profiles(
+    db: AsyncSession, game_id: int, player_ids: set[int]
+) -> dict[int, models.GameProfile]:
+    """Batch-load profiles for the players, creating missing ones.
+
+    One IN() query instead of per-participant lookups — the replay loop
+    touches every participant of every window match.
+    """
+    profiles: dict[int, models.GameProfile] = {}
+    if not player_ids:
+        return profiles
+
+    result = await db.execute(
+        select(models.GameProfile).where(
+            models.GameProfile.game_id == game_id,
+            models.GameProfile.player_id.in_(list(player_ids)),
         )
-        db.add(profile)
+    )
+    profiles = {p.player_id: p for p in result.scalars()}
+
+    created = False
+    for player_id in player_ids:
+        if player_id not in profiles:
+            profile = models.GameProfile(
+                player_id=player_id,
+                game_id=game_id,
+                rating_info=dict(DEFAULT_RATING_INFO),
+                stats={},
+            )
+            db.add(profile)
+            profiles[player_id] = profile
+            created = True
+    if created:
         await db.flush()
-    return profile
+    return profiles
 
 
 async def replay_matches(
@@ -145,18 +165,27 @@ async def replay_matches(
         raise GameNotFoundError(game_id)
     engine_fn = get_rating_engine(game.rating_strategy)
 
+    # Load the (possibly mutated) window. Affected players are everyone with
+    # a pre-mutation reset target PLUS everyone now appearing in the window —
+    # a participant newly added by the correction has no reset target but
+    # still needs their stats rebuilt.
+    window = await _load_window_matches(db, game_id, from_played_at)
+    window_player_ids = {
+        participant.player_id for match in window for participant in match.participants
+    }
+    affected_players = set(reset_targets) | window_player_ids
+    profiles = await _load_profiles(db, game_id, affected_players)
+
     # 1. Reset every affected profile to its pre-window rating.
     for player_id, rating_info in reset_targets.items():
-        profile = await _get_or_create_profile(db, player_id, game_id)
-        profile.rating_info = dict(rating_info)
-        db.add(profile)
+        profiles[player_id].rating_info = dict(rating_info)
+        db.add(profiles[player_id])
     await db.flush()
 
-    # 2. Replay the (possibly mutated) window in order.
-    window = await _load_window_matches(db, game_id, from_played_at)
+    # 2. Replay the window in order.
     for match in window:
         for participant in match.participants:
-            profile = await _get_or_create_profile(db, participant.player_id, game_id)
+            profile = profiles[participant.player_id]
             participant.rating_info_before = dict(profile.rating_info)
             db.add(participant)
         await engine_fn(db, match)
@@ -165,11 +194,11 @@ async def replay_matches(
 
     # Rating history was rewritten; rebuild win/loss stats from scratch for
     # every affected player (increments would drift under replay).
-    await stats_service.rebuild_stats(db, game_id, set(reset_targets))
+    await stats_service.rebuild_stats(db, game_id, affected_players)
 
     stats = RecalculationStats(
         matches_recalculated=len(window),
-        players_affected=len(reset_targets),
+        players_affected=len(affected_players),
     )
     logger.info(
         "Forward recalculation complete",

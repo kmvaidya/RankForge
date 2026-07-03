@@ -14,6 +14,7 @@ import {
 } from '../components/ui'
 import { deleteMatch, errorMessage, listMatches } from '../lib/api'
 import { useSelectedGame } from '../lib/GameContext'
+import { outcomeLabel } from '../lib/outcome'
 import type { Match } from '../lib/types'
 
 const PAGE_SIZE = 20
@@ -34,6 +35,14 @@ export default function MatchesPage() {
   const [page, setPage] = useState(0)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+
+  // Reset pagination when switching games, otherwise a deep page offset can
+  // outrun the new game's match count and show a false empty state.
+  const [lastGameId, setLastGameId] = useState(gameId)
+  if (gameId !== lastGameId) {
+    setLastGameId(gameId)
+    setPage(0)
+  }
 
   const { data, isPending, error } = useQuery({
     queryKey: ['matches', gameId, page],
@@ -139,16 +148,7 @@ export default function MatchesPage() {
                     </p>
                     <ul className="space-y-0.5 text-sm">
                       {members.map((participant) => {
-                        const outcome = participant.outcome as Record<
-                          string,
-                          unknown
-                        >
-                        const label =
-                          typeof outcome.result === 'string'
-                            ? outcome.result
-                            : typeof outcome.rank === 'number'
-                              ? `rank ${outcome.rank}`
-                              : ''
+                        const label = outcomeLabel(participant.outcome)
                         return (
                           <li
                             key={participant.id}

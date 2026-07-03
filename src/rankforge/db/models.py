@@ -49,6 +49,17 @@ class RatingInfo(TypedDict):
 DEFAULT_RATING_INFO: RatingInfo = {"rating": 1500.0, "rd": 350.0, "vol": 0.06}
 
 
+def utcnow_naive() -> datetime:
+    """Current UTC time as a naive datetime.
+
+    All datetime columns store naive UTC. Aware values must never reach the
+    database: asyncpg rejects them on TIMESTAMP WITHOUT TIME ZONE columns,
+    and SQLite stores them as offset-suffixed strings that break lexical
+    comparison/ordering (played_at windows, replay order).
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 # ===============================================
 # Mixins for Common Columns
 # ===============================================
@@ -58,12 +69,12 @@ class TimestampMixin:
     """Mixin providing created_at and updated_at timestamp columns."""
 
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
+        default=utcnow_naive,
         nullable=False,
     )
     updated_at: Mapped[datetime | None] = mapped_column(
         default=None,
-        onupdate=lambda: datetime.now(timezone.utc),
+        onupdate=utcnow_naive,
         nullable=True,
     )
 
@@ -103,12 +114,12 @@ class Player(Base, SoftDeleteMixin):
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     is_anonymous: Mapped[bool] = mapped_column(default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc),
+        default=utcnow_naive,
         nullable=False,
     )
     updated_at: Mapped[datetime | None] = mapped_column(
         default=None,
-        onupdate=lambda: datetime.now(timezone.utc),
+        onupdate=utcnow_naive,
         nullable=True,
     )
     version: Mapped[int] = mapped_column(default=1, nullable=False)
@@ -202,9 +213,7 @@ class Match(Base, TimestampMixin, VersionMixin, SoftDeleteMixin):
     )
     # Business timestamp: when the match was actually played.
     # Indexed: the recalculation cascade and list endpoints query/sort on it.
-    played_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.now(timezone.utc), index=True
-    )
+    played_at: Mapped[datetime] = mapped_column(default=utcnow_naive, index=True)
 
     # Pillar 3: Contextual Metadata
     # Ex: {'map': 'A Diverse World', 'game_length': '3 minutes',

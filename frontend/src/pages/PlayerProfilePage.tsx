@@ -20,15 +20,12 @@ import {
   Spinner,
 } from '../components/ui'
 import { errorMessage, getPlayerMatches, getPlayerStats } from '../lib/api'
+import { outcomeLabel } from '../lib/outcome'
 import type { Match } from '../lib/types'
 
-function outcomeLabel(match: Match, playerId: number): string {
+function playerOutcomeLabel(match: Match, playerId: number): string {
   const me = match.participants.find((p) => p.player_id === playerId)
-  if (!me) return '—'
-  if ('result' in me.outcome && typeof me.outcome.result === 'string')
-    return me.outcome.result
-  if ('rank' in me.outcome) return `rank ${me.outcome.rank}`
-  return '—'
+  return me ? outcomeLabel(me.outcome) || '—' : '—'
 }
 
 export default function PlayerProfilePage() {
@@ -50,20 +47,23 @@ export default function PlayerProfilePage() {
       ? [...games].sort((a, b) => b.matches_played - a.matches_played)[0].game.id
       : null)
 
+  // Fetch newest-first so prolific players (>100 matches) see their latest
+  // matches and current rating trajectory, not the oldest page.
   const history = useQuery({
     queryKey: ['playerMatches', id, activeGameId],
     queryFn: () =>
       getPlayerMatches(id, {
         game_id: activeGameId ?? undefined,
         limit: 100,
-        sort_order: 'asc',
+        sort_order: 'desc',
       }),
     enabled: Number.isFinite(id) && activeGameId !== null,
   })
 
-  // Rating-over-time series derived from before + change on each match.
+  // Rating-over-time series derived from before + change on each match
+  // (reversed into chronological order for the chart).
   const chartData = useMemo(() => {
-    const matches = history.data?.items ?? []
+    const matches = [...(history.data?.items ?? [])].reverse()
     const points: { label: string; rating: number }[] = []
     for (const match of matches) {
       const me = match.participants.find((p) => p.player_id === id)
@@ -82,7 +82,7 @@ export default function PlayerProfilePage() {
   if (stats.error) return <ErrorNote message={errorMessage(stats.error)} />
   const data = stats.data!
 
-  const recentMatches = [...(history.data?.items ?? [])].reverse().slice(0, 15)
+  const recentMatches = (history.data?.items ?? []).slice(0, 15)
   const activeGame = games.find((g) => g.game.id === activeGameId)
 
   return (
@@ -223,7 +223,7 @@ export default function PlayerProfilePage() {
                   const me = match.participants.find(
                     (p) => p.player_id === id,
                   )
-                  const label = outcomeLabel(match, id)
+                  const label = playerOutcomeLabel(match, id)
                   return (
                     <li
                       key={match.id}

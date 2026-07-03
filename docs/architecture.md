@@ -66,13 +66,22 @@ All tables carry `created_at`/`updated_at`; mutation-prone tables carry
 
 ```
 POST /matches → match_service.process_new_match()
-  validate participants (≥2, no dupes, ≥2 teams, players exist)
+  validate participants (≥2, no dupes, ≥2 teams, players exist & not deleted)
   create Match + MatchParticipants (flush, no commit)
   snapshot rating_info_before per participant
   dispatch to rating engine → new ratings + rating_info_change (flush)
   update win/loss stats
   COMMIT (everything or nothing)
 ```
+
+A **backdated** match (played_at earlier than an existing match) is inserted
+un-rated and the affected window is replayed instead, so out-of-order
+imports produce the same ratings as chronological entry.
+
+All datetimes are stored as **naive UTC** (`models.utcnow_naive`, schema
+validators normalize client input): asyncpg rejects aware values on naive
+columns, and SQLite's lexical datetime comparison would corrupt replay
+windows if offset-suffixed strings were stored.
 
 ### Correcting history (the cascade)
 
@@ -81,12 +90,14 @@ full forward recalculation (`services/recalculation_service.py`):
 
 ```
 PUT/DELETE /matches/{id}
-  check optimistic lock (expected_version)
+  claim optimistic lock: atomic UPDATE … WHERE version = expected_version
+    (compare-and-swap; a concurrent loser matches 0 rows → 409)
   capture reset targets: each affected player's rating before their first
     match in the affected window (uses stored rating_info_before)
   apply the correction (mutate or soft-delete)
   reset affected profiles → replay window in (played_at, id) order
-  rebuild stats from scratch for affected players
+  rebuild stats for all affected players (reset targets ∪ window
+    participants), merging over custom stats keys
   COMMIT — a failure anywhere rolls back the entire correction
 ```
 

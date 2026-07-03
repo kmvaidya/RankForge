@@ -236,18 +236,23 @@ export default function MatchmakingPage() {
                       </span>
                       <FairnessMeter value={config.fairness} />
                     </div>
-                    <button
-                      onClick={() =>
-                        applyConfiguration(
-                          config.teams.map((team) =>
-                            team.map((member) => member.player.id),
-                          ),
-                        )
-                      }
-                      className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold hover:bg-slate-700"
-                    >
-                      Use this → Record
-                    </button>
+                    {/* Record Match supports two teams; hide the shortcut
+                        for 3+ team configurations rather than silently
+                        dropping teams. */}
+                    {config.teams.length === 2 && (
+                      <button
+                        onClick={() =>
+                          applyConfiguration(
+                            config.teams.map((team) =>
+                              team.map((member) => member.player.id),
+                            ),
+                          )
+                        }
+                        className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold hover:bg-slate-700"
+                      >
+                        Use this → Record
+                      </button>
+                    )}
                   </div>
                   <div
                     className="grid gap-3"

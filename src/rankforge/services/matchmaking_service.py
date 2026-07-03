@@ -249,23 +249,19 @@ def _swap_players(
 
 
 class _TopConfigurations:
-    """Keeps the N best distinct configurations by fairness."""
+    """Keeps the N best distinct configurations by fairness.
+
+    Fairness is a pure function of the canonical config, so the first offer
+    per key is authoritative; the dict is bounded by the search budget
+    (EXHAUSTIVE_LIMIT / accepted annealing moves), so no pruning is needed.
+    """
 
     def __init__(self, limit: int) -> None:
         self._limit = limit
         self._by_key: dict[tuple, tuple[float, tuple[tuple[int, ...], ...]]] = {}
 
     def offer(self, config: tuple[tuple[int, ...], ...], fairness: float) -> None:
-        key = _canonical(config)
-        existing = self._by_key.get(key)
-        if existing is None or fairness > existing[0]:
-            self._by_key[key] = (fairness, config)
-        if len(self._by_key) > self._limit * 4:
-            self._prune()
-
-    def _prune(self) -> None:
-        best = sorted(self._by_key.items(), key=lambda kv: -kv[1][0])
-        self._by_key = dict(best[: self._limit])
+        self._by_key.setdefault(_canonical(config), (fairness, config))
 
     def best(self) -> list[tuple[float, tuple[tuple[int, ...], ...]]]:
         ranked = sorted(self._by_key.values(), key=lambda fc: -fc[0])

@@ -87,13 +87,23 @@ async def rebuild_stats(
         if result_kind is not None:
             stats[_RESULT_KEYS[result_kind]] += 1
 
-    for player_id, stats in counters.items():
-        profile = await models.GameProfile.find_by_player_and_game(
-            db, player_id, game_id
+    profile_result = await db.execute(
+        select(models.GameProfile).where(
+            models.GameProfile.game_id == game_id,
+            models.GameProfile.player_id.in_(ids),
         )
+    )
+    profiles = {p.player_id: p for p in profile_result.scalars()}
+
+    for player_id, stats in counters.items():
+        profile = profiles.get(player_id)
         if profile is None:
             continue
-        profile.stats = _with_win_rate(stats)
+        # Merge over existing stats: the schema allows game-specific custom
+        # keys (e.g. imported metrics) that a rebuild must not destroy.
+        merged = dict(profile.stats or {})
+        merged.update(stats)
+        profile.stats = _with_win_rate(merged)
         db.add(profile)
 
     await db.flush()
