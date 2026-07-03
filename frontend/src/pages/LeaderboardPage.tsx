@@ -4,21 +4,30 @@ import { Link } from 'react-router-dom'
 
 import GamePicker from '../components/GamePicker'
 import { Card, EmptyState, ErrorNote, PageHeader, Spinner } from '../components/ui'
-import { errorMessage, getLeaderboard } from '../lib/api'
+import { errorMessage, getLeaderboard, listMatches } from '../lib/api'
 import { useSelectedGame } from '../lib/GameContext'
 import type { LeaderboardEntry } from '../lib/types'
 
 type SortKey = 'rank' | 'rating' | 'rd' | 'wins' | 'matches' | 'winRate'
+type MinFilter = 'auto' | 'off' | number
 
 function statNumber(entry: LeaderboardEntry, key: string): number {
   const value = entry.stats?.[key]
   return typeof value === 'number' ? value : 0
 }
 
+/** Auto threshold: 5% of the game's matches, between 1 and 10.
+ *  Glicko-2 ratings are provisional at low sample sizes, but a small
+ *  activity (e.g. 12 matches total) shouldn't demand 10 games. */
+function autoThreshold(totalMatches: number): number {
+  return Math.min(10, Math.max(1, Math.ceil(totalMatches * 0.05)))
+}
+
 export default function LeaderboardPage() {
   const { gameId } = useSelectedGame()
   const [sortKey, setSortKey] = useState<SortKey>('rank')
   const [descending, setDescending] = useState(false)
+  const [minFilter, setMinFilter] = useState<MinFilter>('auto')
 
   const { data, isPending, error } = useQuery({
     queryKey: ['leaderboard', gameId],
@@ -26,8 +35,29 @@ export default function LeaderboardPage() {
     enabled: gameId !== null,
   })
 
-  const rows = useMemo(() => {
+  // Total matches in this game — drives the "Auto" minimum-matches threshold.
+  const { data: matchTotals } = useQuery({
+    queryKey: ['matchTotal', gameId],
+    queryFn: () => listMatches({ game_id: gameId!, limit: 1 }),
+    enabled: gameId !== null,
+  })
+
+  const threshold =
+    minFilter === 'off'
+      ? 0
+      : minFilter === 'auto'
+        ? autoThreshold(matchTotals?.total ?? 0)
+        : minFilter
+
+  const { rows, hiddenCount } = useMemo(() => {
     const items = data?.items ?? []
+    const eligible = items.filter(
+      (e) => statNumber(e, 'matches_played') >= threshold,
+    )
+    // Re-rank the visible board so it reads 1..n by rating.
+    const reranked = [...eligible]
+      .sort((a, b) => b.rating_info.rating - a.rating_info.rating)
+      .map((e, i) => ({ ...e, rank: i + 1 }))
     const value = (e: LeaderboardEntry): number => {
       switch (sortKey) {
         case 'rank':
@@ -44,10 +74,11 @@ export default function LeaderboardPage() {
           return statNumber(e, 'win_rate')
       }
     }
-    return [...items].sort((a, b) =>
+    const sorted = reranked.sort((a, b) =>
       descending ? value(b) - value(a) : value(a) - value(b),
     )
-  }, [data, sortKey, descending])
+    return { rows: sorted, hiddenCount: items.length - eligible.length }
+  }, [data, sortKey, descending, threshold])
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setDescending(!descending)
@@ -73,7 +104,28 @@ export default function LeaderboardPage() {
       <PageHeader
         title="Leaderboard"
         subtitle="Players ranked by Glicko-2 rating"
-        actions={<GamePicker />}
+        actions={
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-slate-400">Min matches</span>
+              <select
+                value={typeof minFilter === 'number' ? String(minFilter) : minFilter}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setMinFilter(v === 'auto' || v === 'off' ? v : Number(v))
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="auto">Auto ({autoThreshold(matchTotals?.total ?? 0)})</option>
+                <option value="off">Off</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="25">25</option>
+              </select>
+            </label>
+            <GamePicker />
+          </div>
+        }
       />
 
       {error && <ErrorNote message={errorMessage(error)} />}
@@ -87,8 +139,14 @@ export default function LeaderboardPage() {
 
       {data && rows.length === 0 && (
         <EmptyState
-          title="No rated players yet"
-          hint="Record a match to put players on the board."
+          title={
+            hiddenCount > 0 ? 'No players meet the filter' : 'No rated players yet'
+          }
+          hint={
+            hiddenCount > 0
+              ? `All ${hiddenCount} player(s) have fewer than ${threshold} matches. Lower the minimum or set it to Off.`
+              : 'Record a match to put players on the board.'
+          }
         />
       )}
 
@@ -144,6 +202,15 @@ export default function LeaderboardPage() {
               ))}
             </tbody>
           </table>
+          {hiddenCount > 0 && (
+            <p className="px-3 pt-3 text-xs text-slate-500">
+              {hiddenCount} provisional player{hiddenCount === 1 ? '' : 's'}{' '}
+              hidden (fewer than {threshold}{' '}
+              {threshold === 1 ? 'match' : 'matches'}) — Glicko-2 ratings are
+              unreliable at low sample sizes. Set the filter to Off to show
+              everyone.
+            </p>
+          )}
         </Card>
       )}
     </div>
