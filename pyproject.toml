@@ -25,8 +25,11 @@ dependencies = [
 # ===============================
 [project.optional-dependencies]
 dev = [
-    "ruff",              # For linting and formatting
-    "mypy",              # For static type checking
+    # ruff/mypy are pinned to match .pre-commit-config.yaml revs — CI installs
+    # from here, and an unpinned major bump breaks it (mypy 2.x drops support
+    # for the sqlalchemy mypy plugin).
+    "ruff==0.13.1",      # For linting and formatting
+    "mypy==1.18.2",      # For static type checking
     "pre-commit",        # For managing pre-commit hooks
     "pytest",            # For testing
     "pytest-asyncio",    # For testing asyncio code
