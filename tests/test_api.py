@@ -1,6 +1,7 @@
 # tests/test_api.py
 
 """Tests for the main API endpoints."""
+
 import pytest
 from httpx import AsyncClient
 

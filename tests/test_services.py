@@ -3,11 +3,12 @@
 """Unit tests for the service layer."""
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from rankforge.db.models import Game, GameProfile, Player
 from rankforge.schemas.match import MatchCreate, MatchParticipantCreate
 from rankforge.services import match_service
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio
@@ -136,9 +137,9 @@ async def test_process_new_match_updates_player_stats(db_session: AsyncSession):
     # Assert that the 'matches_played' stat was correctly incremented.
     assert profile.stats is not None
     assert "matches_played" in profile.stats
-    assert (
-        profile.stats["matches_played"] == 6
-    ), "The dummy engine did not increment the matches_played stat."
+    assert profile.stats["matches_played"] == 6, (
+        "The dummy engine did not increment the matches_played stat."
+    )
 
 
 @pytest.mark.asyncio
@@ -189,23 +190,23 @@ async def test_process_new_match_updates_glicko2_ratings(db_session: AsyncSessio
     await db_session.refresh(loser_profile)
 
     # Assert that the winner's rating has increased.
-    assert (
-        winner_profile.rating_info["rating"] > winner_initial_rating
-    ), "Winner's rating should increase"
+    assert winner_profile.rating_info["rating"] > winner_initial_rating, (
+        "Winner's rating should increase"
+    )
 
     # Assert that the loser's rating has decreased.
-    assert (
-        loser_profile.rating_info["rating"] < loser_initial_rating
-    ), "Loser's rating should decrease"
+    assert loser_profile.rating_info["rating"] < loser_initial_rating, (
+        "Loser's rating should decrease"
+    )
 
     # A key property of Glicko-2 is that Rating Deviation (RD) should change
     # after a match. It usually decreases.
-    assert (
-        winner_profile.rating_info["rd"] != initial_rating_info["rd"]
-    ), "Winner's rating deviation should change"
-    assert (
-        loser_profile.rating_info["rd"] != initial_rating_info["rd"]
-    ), "Loser's rating deviation should change"
+    assert winner_profile.rating_info["rd"] != initial_rating_info["rd"], (
+        "Winner's rating deviation should change"
+    )
+    assert loser_profile.rating_info["rd"] != initial_rating_info["rd"], (
+        "Loser's rating deviation should change"
+    )
 
 
 @pytest.mark.asyncio
@@ -216,7 +217,7 @@ async def test_process_new_match_handles_ranked_outcomes(db_session: AsyncSessio
     """
     # 1. ARRANGE: Set up a 4-player FFA game and their profiles.
     game = Game(name="FFA Game", rating_strategy="glicko2")
-    players = [Player(name=f"Player {i+1}") for i in range(4)]
+    players = [Player(name=f"Player {i + 1}") for i in range(4)]
     db_session.add(game)
     db_session.add_all(players)
     await db_session.commit()
@@ -288,7 +289,7 @@ async def test_process_new_match_handles_ranked_outcomes_2(db_session: AsyncSess
     """
     # 1. ARRANGE: Set up a 4-player FFA game and their profiles.
     game = Game(name="FFA Game 2", rating_strategy="glicko2")
-    players = [Player(name=f"RankedPlayer {i+1}") for i in range(4)]
+    players = [Player(name=f"RankedPlayer {i + 1}") for i in range(4)]
     db_session.add(game)
     db_session.add_all(players)
     await db_session.commit()
@@ -335,21 +336,21 @@ async def test_process_new_match_handles_ranked_outcomes_2(db_session: AsyncSess
 
     # The highest-rated player won, so their rating MUST increase.
     # The current "draw" logic will incorrectly make it decrease.
-    assert (
-        new_ratings[players[0].id] > initial_ratings[0]
-    ), "1st place finisher's rating should increase, even if they were the favorite"
+    assert new_ratings[players[0].id] > initial_ratings[0], (
+        "1st place finisher's rating should increase, even if they were the favorite"
+    )
 
     # The lowest-rated player lost, so their rating MUST decrease.
-    assert (
-        new_ratings[players[3].id] < initial_ratings[3]
-    ), "4th place finisher's rating should decrease"
+    assert new_ratings[players[3].id] < initial_ratings[3], (
+        "4th place finisher's rating should decrease"
+    )
 
     # The 2nd place player should have a better rating change than the 3rd place player.
     change_p2 = new_ratings[players[1].id] - initial_ratings[1]
     change_p3 = new_ratings[players[2].id] - initial_ratings[2]
-    assert (
-        change_p2 > change_p3
-    ), "2nd place should have a better rating change than 3rd"
+    assert change_p2 > change_p3, (
+        "2nd place should have a better rating change than 3rd"
+    )
 
 
 # tests/test_services.py
@@ -449,7 +450,7 @@ async def test_process_new_match_handles_ranked_teams(db_session: AsyncSession):
     db_session.add(game)
     await db_session.commit()
 
-    players = [Player(name=f"RT Player {i+1}") for i in range(8)]
+    players = [Player(name=f"RT Player {i + 1}") for i in range(8)]
     db_session.add_all(players)
     await db_session.commit()
 
@@ -527,9 +528,9 @@ async def test_process_new_match_handles_ranked_teams(db_session: AsyncSession):
     # The 2nd place team should have a better rating change than the 3rd place team.
     p_rank2_change = new_ratings_map[players[4].id] - initial_ratings_map[players[4].id]
     p_rank3_change = new_ratings_map[players[2].id] - initial_ratings_map[players[2].id]
-    assert (
-        p_rank2_change > p_rank3_change
-    ), "2nd place change should be > 3rd place change"
+    assert p_rank2_change > p_rank3_change, (
+        "2nd place change should be > 3rd place change"
+    )
 
 
 @pytest.mark.asyncio
@@ -597,15 +598,15 @@ async def test_process_new_match_handles_4v4_team_draw(db_session: AsyncSession)
     team2_ratings = [profiles[p.id].rating_info["rating"] for p in team2_players]
 
     # All teammates should have identical ratings (same change)
-    assert all(
-        r == team1_ratings[0] for r in team1_ratings
-    ), "Team1 players should have identical ratings"
-    assert all(
-        r == team2_ratings[0] for r in team2_ratings
-    ), "Team2 players should have identical ratings"
+    assert all(r == team1_ratings[0] for r in team1_ratings), (
+        "Team1 players should have identical ratings"
+    )
+    assert all(r == team2_ratings[0] for r in team2_ratings), (
+        "Team2 players should have identical ratings"
+    )
 
     # Ratings should be close to initial (draw between equals)
     for rating in team1_ratings + team2_ratings:
-        assert (
-            abs(rating - initial_rating) < 50
-        ), f"Rating {rating} should be close to {initial_rating} after draw"
+        assert abs(rating - initial_rating) < 50, (
+            f"Rating {rating} should be close to {initial_rating} after draw"
+        )

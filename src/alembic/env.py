@@ -2,12 +2,13 @@ import asyncio
 import os
 from logging.config import fileConfig
 
-from alembic import context
 from dotenv import load_dotenv
-from rankforge.db.models import Base
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+from alembic import context
+from rankforge.db.models import Base
 
 # Load environment variables from .env file
 load_dotenv()

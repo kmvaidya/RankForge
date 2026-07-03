@@ -1,6 +1,7 @@
 # src/rankforge/db/session.py
 
 """Database session management."""
+
 import logging
 import os
 from typing import AsyncGenerator

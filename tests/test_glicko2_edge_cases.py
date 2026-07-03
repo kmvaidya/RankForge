@@ -8,6 +8,7 @@ from typing import Any, cast
 
 import pytest
 from httpx import AsyncClient
+
 from rankforge.db.models import Match
 from rankforge.exceptions import NonCompetitiveMatchError, RatingCalculationError
 from rankforge.rating.glicko2_engine import (

@@ -6,10 +6,11 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
-from rankforge.db.models import GameProfile, Match, MatchParticipant
-from rankforge.exceptions import RatingCalculationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from rankforge.db.models import GameProfile, Match, MatchParticipant
+from rankforge.exceptions import RatingCalculationError
 
 # =============================================================================
 # Helper Functions

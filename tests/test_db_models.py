@@ -3,9 +3,10 @@
 """Tests for the database models."""
 
 import pytest
-from rankforge.db.models import Player
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from rankforge.db.models import Player
 
 
 @pytest.mark.asyncio

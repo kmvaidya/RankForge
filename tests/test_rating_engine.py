@@ -1,10 +1,12 @@
 # tests/test_rating_engine.py
 
 """Unit tests for the rating engine logic."""
+
 from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
+
 from rankforge.db.models import Match
 from rankforge.rating.glicko2_engine import _calculate_player_scores
 
@@ -125,9 +127,9 @@ def test_calculate_player_scores_for_3v3_draw():
 
     # 3. ASSERT: All 6 players should have a score of 0.5 (draw)
     for player_id in range(1, 7):
-        assert scores[player_id] == pytest.approx(
-            0.5
-        ), f"Player {player_id} should have score 0.5"
+        assert scores[player_id] == pytest.approx(0.5), (
+            f"Player {player_id} should have score 0.5"
+        )
 
 
 def test_calculate_player_scores_for_4v4_draw():
@@ -156,9 +158,9 @@ def test_calculate_player_scores_for_4v4_draw():
 
     # 3. ASSERT: All 8 players should have a score of 0.5 (draw)
     for player_id in range(1, 9):
-        assert scores[player_id] == pytest.approx(
-            0.5
-        ), f"Player {player_id} should have score 0.5"
+        assert scores[player_id] == pytest.approx(0.5), (
+            f"Player {player_id} should have score 0.5"
+        )
 
 
 def test_calculate_player_scores_for_3_team_draw():

@@ -40,6 +40,10 @@ line-length = 88
 # Enable Pyflakes, pycodestyle, and isort rules.
 select = ["E", "F", "I"]
 
+[tool.ruff.lint.isort]
+# Explicit so all ruff versions agree (src-layout autodetection varies).
+known-first-party = ["rankforge"]
+
 [tool.ruff.format]
 quote-style = "double"
 

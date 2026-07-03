@@ -872,9 +872,9 @@ async def test_leaderboard_rating_order_correct(async_client: AsyncClient):
     ratings = [entry["rating_info"]["rating"] for entry in data["items"]]
 
     # Verify descending order
-    assert ratings == sorted(
-        ratings, reverse=True
-    ), "Leaderboard should be sorted by rating descending"
+    assert ratings == sorted(ratings, reverse=True), (
+        "Leaderboard should be sorted by rating descending"
+    )
 
     # Verify correct players at positions
     assert data["items"][0]["player"]["id"] == p_top  # Rank 1
