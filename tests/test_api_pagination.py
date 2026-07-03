@@ -879,3 +879,54 @@ async def test_leaderboard_rating_order_correct(async_client: AsyncClient):
     # Verify correct players at positions
     assert data["items"][0]["player"]["id"] == p_top  # Rank 1
     assert data["items"][2]["player"]["id"] == p_bot  # Rank 3
+
+
+# =============================================================================
+# Count Correctness With Joins (regression: cartesian product in count query)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_matches_player_filter_total_excludes_other_matches(
+    async_client: AsyncClient,
+):
+    """Total for player-filtered matches must not count unrelated matches."""
+    game_id = await create_game(async_client, "Count Game A")
+    p1 = await create_player(async_client, "Count P1")
+    p2 = await create_player(async_client, "Count P2")
+    p3 = await create_player(async_client, "Count P3")
+    p4 = await create_player(async_client, "Count P4")
+
+    # One match involving p1, three matches NOT involving p1
+    await create_match(async_client, game_id, p1, p2)
+    await create_match(async_client, game_id, p3, p4)
+    await create_match(async_client, game_id, p3, p4)
+    await create_match(async_client, game_id, p3, p4)
+
+    response = await async_client.get(f"/matches/?player_id={p1}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert len(data["items"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_player_matches_total_excludes_other_matches(async_client: AsyncClient):
+    """Total for /players/{id}/matches must not count unrelated matches."""
+    game_id = await create_game(async_client, "Count Game B")
+    p1 = await create_player(async_client, "Count P5")
+    p2 = await create_player(async_client, "Count P6")
+    p3 = await create_player(async_client, "Count P7")
+    p4 = await create_player(async_client, "Count P8")
+
+    # Two matches involving p1, two matches NOT involving p1
+    await create_match(async_client, game_id, p1, p2)
+    await create_match(async_client, game_id, p1, p3)
+    await create_match(async_client, game_id, p3, p4)
+    await create_match(async_client, game_id, p2, p4)
+
+    response = await async_client.get(f"/players/{p1}/matches")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert len(data["items"]) == 2

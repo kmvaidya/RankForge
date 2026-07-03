@@ -317,8 +317,9 @@ async def get_player_matches(
         base_query = base_query.where(Match.played_at <= played_before)
 
     # Get total count (distinct because of join)
-    count_query = select(func.count(func.distinct(Match.id))).select_from(
-        base_query.subquery()
+    count_subquery = base_query.subquery()
+    count_query = select(func.count(func.distinct(count_subquery.c.id))).select_from(
+        count_subquery
     )
     total = (await db.execute(count_query)).scalar_one()
 
