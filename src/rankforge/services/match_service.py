@@ -26,7 +26,7 @@ from rankforge.exceptions import (
 )
 from rankforge.rating import get_rating_engine
 from rankforge.schemas import match as match_schema
-from rankforge.services import recalculation_service
+from rankforge.services import recalculation_service, stats_service
 from rankforge.services.recalculation_service import (
     RecalculationStats,
     cascade_start_for,
@@ -261,6 +261,9 @@ async def process_new_match(
         new_match = models.Match(**match_data)
 
         # 5. Ensure profiles exist and create participant records.
+        profiles_by_participant: list[
+            tuple[models.GameProfile, models.MatchParticipant]
+        ] = []
         for participant_data in match_in.participants:
             # At this point, player_id is guaranteed to be set (either from input
             # or from anonymous player creation)
@@ -276,6 +279,7 @@ async def process_new_match(
 
             new_participant = models.MatchParticipant(**participant_with_history)
             new_match.participants.append(new_participant)
+            profiles_by_participant.append((profile, new_participant))
 
         # 6. Add the new match and flush to get IDs (NO COMMIT YET)
         db.add(new_match)
@@ -291,6 +295,12 @@ async def process_new_match(
 
         engine_fn = get_rating_engine(game.rating_strategy)
         await engine_fn(db, new_match)
+
+        # 7b. Update win/loss/draw stats (service-owned; engines only touch
+        #     rating_info)
+        for profile, participant in profiles_by_participant:
+            stats_service.apply_match_stats(profile, participant.outcome)
+            db.add(profile)
 
         # 8. COMMIT the entire transaction atomically (match + ratings together)
         await db.commit()

@@ -37,6 +37,7 @@ from rankforge.db import models
 from rankforge.db.models import DEFAULT_RATING_INFO
 from rankforge.exceptions import GameNotFoundError
 from rankforge.rating import get_rating_engine
+from rankforge.services import stats_service
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,10 @@ async def replay_matches(
 
     await db.flush()
 
+    # Rating history was rewritten; rebuild win/loss stats from scratch for
+    # every affected player (increments would drift under replay).
+    await stats_service.rebuild_stats(db, game_id, set(reset_targets))
+
     stats = RecalculationStats(
         matches_recalculated=len(window),
         players_affected=len(reset_targets),
@@ -175,3 +180,26 @@ async def replay_matches(
         },
     )
     return stats
+
+
+async def recalculate_game(db: AsyncSession, game_id: int) -> RecalculationStats:
+    """Recalculate a game's entire rating history and stats from scratch.
+
+    Maintenance operation: replays every non-deleted match in chronological
+    order, resetting every participant to their pre-first-match rating.
+    Heals any drift from out-of-order imports, pre-stats data, or manual
+    edits. Commits on success, rolls back on failure.
+    """
+    game = await db.get(models.Game, game_id)
+    if game is None or game.deleted_at is not None:
+        raise GameNotFoundError(game_id)
+
+    beginning = datetime(1, 1, 1)
+    try:
+        reset_targets = await capture_reset_targets(db, game_id, beginning)
+        stats = await replay_matches(db, game_id, beginning, reset_targets)
+        await db.commit()
+        return stats
+    except Exception:
+        await db.rollback()
+        raise

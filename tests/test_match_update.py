@@ -509,3 +509,137 @@ async def test_delete_already_deleted_match_returns_404(async_client: AsyncClien
 
     assert (await async_client.delete(f"/matches/{match['id']}")).status_code == 204
     assert (await async_client.delete(f"/matches/{match['id']}")).status_code == 404
+
+
+# =============================================================================
+# Stats maintenance and full-game recalculation
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_match_creation_updates_stats(async_client: AsyncClient):
+    game_id = await create_game(async_client, "MU Stats Game")
+    p1 = await create_player(async_client, "MU Stats P1")
+    p2 = await create_player(async_client, "MU Stats P2")
+
+    await create_match(async_client, game_id, p1, p2)
+    await create_match(async_client, game_id, p1, p2)
+    await create_match(async_client, game_id, p2, p1)
+
+    res = await async_client.get(f"/players/{p1}/stats")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total_matches"] == 3
+    assert body["total_wins"] == 2
+    assert body["total_losses"] == 1
+    assert body["overall_win_rate"] == pytest.approx(2 / 3, abs=1e-3)
+
+    lb = await async_client.get(f"/games/{game_id}/leaderboard")
+    entry = next(e for e in lb.json()["items"] if e["player"]["id"] == p1)
+    assert entry["stats"]["matches_played"] == 3
+    assert entry["stats"]["wins"] == 2
+
+
+@pytest.mark.asyncio
+async def test_draw_counted_in_stats(async_client: AsyncClient):
+    game_id = await create_game(async_client, "MU DrawStats Game")
+    p1 = await create_player(async_client, "MU DrawStats P1")
+    p2 = await create_player(async_client, "MU DrawStats P2")
+
+    res = await async_client.post(
+        "/matches/",
+        json={
+            "game_id": game_id,
+            "participants": [
+                {"player_id": p1, "team_id": 1, "outcome": {"result": "draw"}},
+                {"player_id": p2, "team_id": 2, "outcome": {"result": "draw"}},
+            ],
+        },
+    )
+    assert res.status_code == 201
+
+    stats = (await async_client.get(f"/players/{p1}/stats")).json()
+    assert stats["total_matches"] == 1
+    assert stats["total_draws"] == 1
+    assert stats["total_wins"] == 0
+
+
+@pytest.mark.asyncio
+async def test_delete_match_rebuilds_stats(async_client: AsyncClient):
+    game_id = await create_game(async_client, "MU DelStats Game")
+    p1 = await create_player(async_client, "MU DelStats P1")
+    p2 = await create_player(async_client, "MU DelStats P2")
+
+    await create_match(async_client, game_id, p1, p2, played_at=BASE_TIME)
+    m2 = await create_match(
+        async_client, game_id, p1, p2, played_at=BASE_TIME + timedelta(hours=1)
+    )
+
+    assert (await async_client.delete(f"/matches/{m2['id']}")).status_code == 204
+
+    stats = (await async_client.get(f"/players/{p1}/stats")).json()
+    assert stats["total_matches"] == 1
+    assert stats["total_wins"] == 1
+
+
+@pytest.mark.asyncio
+async def test_update_participants_rebuilds_stats(async_client: AsyncClient):
+    game_id = await create_game(async_client, "MU UpdStats Game")
+    p1 = await create_player(async_client, "MU UpdStats P1")
+    p2 = await create_player(async_client, "MU UpdStats P2")
+    m1 = await create_match(async_client, game_id, p1, p2, played_at=BASE_TIME)
+
+    # Flip the winner
+    res = await async_client.put(
+        f"/matches/{m1['id']}",
+        json={
+            "expected_version": m1["version"],
+            "participants": [
+                {"player_id": p2, "team_id": 1, "outcome": {"result": "win"}},
+                {"player_id": p1, "team_id": 2, "outcome": {"result": "loss"}},
+            ],
+        },
+    )
+    assert res.status_code == 200
+
+    p1_stats = (await async_client.get(f"/players/{p1}/stats")).json()
+    assert p1_stats["total_matches"] == 1
+    assert p1_stats["total_wins"] == 0
+    assert p1_stats["total_losses"] == 1
+    p2_stats = (await async_client.get(f"/players/{p2}/stats")).json()
+    assert p2_stats["total_wins"] == 1
+
+
+@pytest.mark.asyncio
+async def test_recalculate_game_heals_corrupted_data(async_client: AsyncClient):
+    """POST /games/{id}/recalculate must restore ratings and stats to what
+    a clean replay produces."""
+    game_id = await create_game(async_client, "MU Heal Game")
+    p1 = await create_player(async_client, "MU Heal P1")
+    p2 = await create_player(async_client, "MU Heal P2")
+    await create_match(async_client, game_id, p1, p2, played_at=BASE_TIME)
+    await create_match(
+        async_client, game_id, p1, p2, played_at=BASE_TIME + timedelta(hours=1)
+    )
+
+    healthy = await get_ratings_by_player(async_client, game_id)
+
+    res = await async_client.post(f"/games/{game_id}/recalculate")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["matches_recalculated"] == 2
+    assert body["players_affected"] == 2
+
+    # Ratings unchanged by a clean recalculation (deterministic replay)
+    assert await get_ratings_by_player(async_client, game_id) == healthy
+
+    # Stats correct after rebuild
+    stats = (await async_client.get(f"/players/{p1}/stats")).json()
+    assert stats["total_matches"] == 2
+    assert stats["total_wins"] == 2
+
+
+@pytest.mark.asyncio
+async def test_recalculate_nonexistent_game_returns_404(async_client: AsyncClient):
+    res = await async_client.post("/games/999999/recalculate")
+    assert res.status_code == 404

@@ -13,7 +13,9 @@ from rankforge.db.session import get_db
 from rankforge.schemas import game as game_schema
 from rankforge.schemas.common import RatingInfo
 from rankforge.schemas.leaderboard import LeaderboardEntry
+from rankforge.schemas.match import RecalculationResult
 from rankforge.schemas.pagination import GameSortField, PaginatedResponse, SortOrder
+from rankforge.services import recalculation_service
 
 # Creates an APIRouter instance
 # - prefix="/games": All routes defined here will be prefixed with /games
@@ -268,4 +270,25 @@ async def get_leaderboard(
         skip=skip,
         limit=limit,
         has_more=(skip + len(entries)) < total,
+    )
+
+
+@router.post("/{game_id}/recalculate", response_model=RecalculationResult)
+async def recalculate_game(
+    game_id: int, db: AsyncSession = Depends(get_db)
+) -> RecalculationResult:
+    """
+    Rebuild a game's entire rating history and stats from scratch.
+
+    Maintenance operation: replays every non-deleted match in chronological
+    order. Useful after bulk imports or to heal data recorded before stats
+    tracking existed.
+
+    Raises:
+        404: If the game doesn't exist
+    """
+    stats = await recalculation_service.recalculate_game(db, game_id)
+    return RecalculationResult(
+        matches_recalculated=stats.matches_recalculated,
+        players_affected=stats.players_affected,
     )
