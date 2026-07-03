@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
-from .api import game, match, player
+from .api import game, match, matchmaking, player
 from .db.session import engine
 from .exceptions import (
     ConflictError,
@@ -162,6 +162,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 app.include_router(game.router)
 app.include_router(player.router)
 app.include_router(match.router)
+app.include_router(matchmaking.router)
 
 
 @app.get("/", tags=["Root"])

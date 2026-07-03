@@ -169,6 +169,13 @@ class InvalidOutcomeError(ParticipantValidationError):
         )
 
 
+class InfeasibleConstraintsError(ValidationError):
+    """Raised when matchmaking constraints rule out every configuration."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message)
+
+
 class MatchTooOldToUpdateError(ValidationError):
     """Raised when a match is beyond the configured update-age threshold."""
 
