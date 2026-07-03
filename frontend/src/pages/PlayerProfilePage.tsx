@@ -20,13 +20,7 @@ import {
   Spinner,
 } from '../components/ui'
 import { errorMessage, getPlayerMatches, getPlayerStats } from '../lib/api'
-import { outcomeLabel } from '../lib/outcome'
-import type { Match } from '../lib/types'
-
-function playerOutcomeLabel(match: Match, playerId: number): string {
-  const me = match.participants.find((p) => p.player_id === playerId)
-  return me ? outcomeLabel(me.outcome) || '—' : '—'
-}
+import { outcomeClass } from '../lib/outcome'
 
 export default function PlayerProfilePage() {
   const { playerId } = useParams()
@@ -223,7 +217,7 @@ export default function PlayerProfilePage() {
                   const me = match.participants.find(
                     (p) => p.player_id === id,
                   )
-                  const label = playerOutcomeLabel(match, id)
+                  const klass = me ? outcomeClass(me.outcome) : null
                   return (
                     <li
                       key={match.id}
@@ -232,14 +226,20 @@ export default function PlayerProfilePage() {
                       <div className="min-w-0">
                         <span
                           className={`mr-2 inline-block w-10 rounded px-1.5 py-0.5 text-center text-xs font-bold uppercase ${
-                            label === 'win'
+                            klass === 'win'
                               ? 'bg-emerald-950/80 text-emerald-400'
-                              : label === 'loss'
+                              : klass === 'loss'
                                 ? 'bg-red-950/80 text-red-400'
                                 : 'bg-slate-800 text-slate-400'
                           }`}
                         >
-                          {label === 'win' ? 'W' : label === 'loss' ? 'L' : 'D'}
+                          {klass === 'win'
+                            ? 'W'
+                            : klass === 'loss'
+                              ? 'L'
+                              : klass === 'draw'
+                                ? 'D'
+                                : '—'}
                         </span>
                         <span className="text-slate-400">
                           {new Date(match.played_at).toLocaleDateString()} · vs{' '}
