@@ -84,6 +84,16 @@ improvement sums by it — mathematically equivalent to playing `weight`
 copies of the game. Use `0 < w < 1` for casual/partial games, `w > 1` for
 high-stakes events. Invalid weights fail the match atomically.
 
+### Feature flags (generic core vs. per-deployment extras)
+
+`rankforge/features.py` defines the flags the codebase understands;
+`RANKFORGE_FEATURES` (comma-separated env var) enables them per deployment,
+and `GET /config` serves the enabled set to the frontend, which gates UI
+via the `useFeature()` hook (`frontend/src/lib/features.ts`). Flags gate
+*exposure*, never correctness — e.g. the engine always honors
+`match_metadata.weight`, but only deployments with `match_weights` show the
+weight input on Record Match. Stock installs run with no flags.
+
 All datetimes are stored as **naive UTC** (`models.utcnow_naive`, schema
 validators normalize client input): asyncpg rejects aware values on naive
 columns, and SQLite's lexical datetime comparison would corrupt replay

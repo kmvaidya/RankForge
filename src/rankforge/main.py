@@ -20,6 +20,7 @@ from .exceptions import (
     ResourceNotFoundError,
     ValidationError,
 )
+from .features import enabled_features
 from .middleware.logging import RequestLoggingMiddleware
 from .middleware.security import SecurityHeadersMiddleware
 
@@ -196,3 +197,12 @@ async def read_root() -> dict[str, str]:
 async def health_check() -> dict[str, str]:
     """Health check endpoint for monitoring."""
     return {"status": "healthy"}
+
+
+@app.get("/config", tags=["Config"])
+async def app_config() -> dict[str, list[str]]:
+    """Deployment configuration the frontend needs at runtime.
+
+    Currently just the enabled feature flags (see rankforge.features).
+    """
+    return {"features": enabled_features()}

@@ -12,6 +12,7 @@ import {
   SuccessNote,
 } from '../components/ui'
 import { createMatch, createPlayer, errorMessage, listPlayers } from '../lib/api'
+import { useFeature } from '../lib/features'
 import { useSelectedGame } from '../lib/GameContext'
 import type { Match, ParticipantCreate } from '../lib/types'
 
@@ -33,6 +34,10 @@ export default function RecordMatchPage() {
   const [winner, setWinner] = useState<Winner>(1)
   const [score, setScore] = useState('')
   const [notes, setNotes] = useState('')
+  const [weight, setWeight] = useState('')
+  const weightsEnabled = useFeature('match_weights')
+  const weightValue = weight.trim() === '' ? 1 : Number(weight)
+  const weightValid = Number.isFinite(weightValue) && weightValue > 0
   const [newPlayerName, setNewPlayerName] = useState('')
   const [result, setResult] = useState<Match | null>(null)
 
@@ -58,6 +63,7 @@ export default function RecordMatchPage() {
       setTeam2([])
       setScore('')
       setNotes('')
+      setWeight('')
       queryClient.invalidateQueries({ queryKey: ['leaderboard'] })
       queryClient.invalidateQueries({ queryKey: ['matches'] })
     },
@@ -78,7 +84,11 @@ export default function RecordMatchPage() {
   }
 
   const canSubmit =
-    gameId !== null && team1.length > 0 && team2.length > 0 && !submit.isPending
+    gameId !== null &&
+    team1.length > 0 &&
+    team2.length > 0 &&
+    weightValid &&
+    !submit.isPending
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -105,6 +115,8 @@ export default function RecordMatchPage() {
     const metadata: Record<string, unknown> = {}
     if (score.trim()) metadata.final_score = score.trim()
     if (notes.trim()) metadata.notes = notes.trim()
+    if (weightsEnabled && weight.trim() && weightValue !== 1)
+      metadata.weight = weightValue
 
     submit.mutate({
       game_id: gameId!,
@@ -304,6 +316,27 @@ export default function RecordMatchPage() {
                 className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
               />
             </label>
+
+            {weightsEnabled && (
+              <label className="mt-3 block text-xs font-medium text-slate-400">
+                Match weight (optional)
+                <input
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="1 = normal, 5 = counts 5×"
+                  className={`mt-1 w-full rounded-lg border bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none ${
+                    weightValid
+                      ? 'border-slate-700 focus:border-indigo-500'
+                      : 'border-red-700 focus:border-red-500'
+                  }`}
+                />
+                <span className="mt-1 block text-[11px] text-slate-500">
+                  Scales how much this match moves ratings. Must be a positive
+                  number.
+                </span>
+              </label>
+            )}
 
             <label className="mt-3 block text-xs font-medium text-slate-400">
               Notes (optional)

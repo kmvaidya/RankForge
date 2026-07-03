@@ -1,6 +1,7 @@
 import axios from 'axios'
 
 import type {
+  AppConfig,
   Game,
   LeaderboardEntry,
   Match,
@@ -35,6 +36,11 @@ export function errorMessage(error: unknown): string {
   }
   return error instanceof Error ? error.message : 'Something went wrong'
 }
+
+// --- Config ---
+
+export const getConfig = async (): Promise<AppConfig> =>
+  (await api.get('/config')).data
 
 // --- Games ---
 

@@ -141,3 +141,8 @@ export interface MatchUpdateResponse {
   match: Match
   recalculation: RecalculationResult | null
 }
+
+/** Runtime deployment config from GET /config (feature flags etc.). */
+export interface AppConfig {
+  features: string[]
+}
