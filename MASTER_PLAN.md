@@ -783,17 +783,23 @@ The data layer has the most issues and requires significant restructuring.
 
 ---
 
-#### Phase 0E: Development Environment & Cleanup
+#### Phase 0E: Development Environment & Cleanup ✅ COMPLETED
 
-| Task | Hours | Priority | Issue Addressed |
-|------|-------|----------|-----------------|
-| Set up Docker development environment | 4 | HIGH | Inconsistent setup |
-| Create docker-compose with PostgreSQL | 2 | HIGH | SQLite limitations |
-| Consolidate 24 import scripts into single importer | 4 | LOW | Script sprawl |
-| Update README with new setup instructions | 2 | MEDIUM | Outdated docs |
-| Create .env.example with all variables | 1 | HIGH | Missing template |
+**Completed:** 2026-07-03
+
+| Task | Hours | Priority | Status | Issue Addressed |
+|------|-------|----------|--------|-----------------|
+| Set up Docker development environment | 4 | HIGH | ✅ Done | Inconsistent setup |
+| Create docker-compose with PostgreSQL | 2 | HIGH | ✅ Done | SQLite limitations |
+| Consolidate 24 import scripts into single importer | 4 | LOW | Deferred | scripts/ is gitignored personal data; superseded by web UI + recalculate endpoint |
+| Update README with new setup instructions | 2 | MEDIUM | ✅ Done | Outdated docs |
+| Create .env.example with all variables | 1 | HIGH | ✅ Done | Missing template |
 
 **Subtotal:** 13 hours
+
+**Implementation Notes:**
+- Multi-stage Dockerfile (python:3.13-slim, non-root, healthcheck), compose with PostgreSQL 16 + hot-reload API + one-shot migrations service, prod overlay
+- Both Docker images and compose configs build/validate clean
 
 ---
 
@@ -805,10 +811,10 @@ The data layer has the most issues and requires significant restructuring.
 | 0B: Data Layer | 50 | Models, schemas, services | ✅ Complete |
 | 0C: API Layer | 27 | Endpoints, error handling | ✅ Complete |
 | 0D: Test Coverage | 22 | Comprehensive testing | ✅ Complete |
-| 0E: Dev Environment | 13 | Docker, cleanup | Pending |
-| **Total** | **122** | **20-40 weeks at 3-6 hrs/week** | **4/5 Done** |
+| 0E: Dev Environment | 13 | Docker, cleanup | ✅ Complete |
+| **Total** | **122** | **20-40 weeks at 3-6 hrs/week** | **5/5 Done** |
 
-**Current Status (2025-01-04):** Phases 0A-0D complete. Only Phase 0E (Docker setup) remains before starting Phase 1 (Matchmaking Algorithm).
+**Current Status (2026-07-03):** Phase 0 complete. Phases 1 (matchmaking + match updates), 2 (frontend), and the buildable parts of 3 (CI, Docker, CORS/security) are also complete — see those sections. Remaining work is cloud deployment (human account setup) and post-MVP features.
 
 **Completion Criteria:**
 
@@ -819,7 +825,7 @@ The data layer has the most issues and requires significant restructuring.
 - [x] API returns proper errors for all failure cases (Phase 0C)
 - [x] Pagination works on all list endpoints (Phase 0C)
 - [x] Test coverage comprehensive (162 tests) (Phase 0D)
-- [ ] Docker development environment functional (Phase 0E - pending)
+- [x] Docker development environment functional (Phase 0E)
 - [x] Zero silent failures in codebase (Phase 0B)
 - [x] All TODO comments replaced with implementations (Phase 0B)
 
@@ -835,8 +841,15 @@ The data layer has the most issues and requires significant restructuring.
 
 ---
 
-### Phase 1: Matchmaking Algorithm Implementation
+### Phase 1: Matchmaking Algorithm Implementation ✅ COMPLETED
+
+**Completed:** 2026-07-03 (both matchmaking and the match update cascade)
+
 **Goal:** Implement the novel matchmaking algorithm that makes this project unique
+
+**Implementation Notes:**
+- Matchmaking: `services/matchmaking_service.py` — Gaussian skill superposition, coin-flip fairness metric, exhaustive search with canonical dedup (≤20k partitions) + simulated annealing with restarts, together/apart constraints, `POST /matchmaking/generate` with seedable reproducibility. Documented in `docs/matchmaking-algorithm.md`. 25 tests incl. the <2s/12-player criterion.
+- Match update cascade: `services/recalculation_service.py` — capture reset targets → mutate → forward replay in (played_at, id) order, stats rebuilt from scratch. `PUT /matches/{id}` (optimistic locking via expected_version, 409 on conflict, configurable age limit), soft-delete `DELETE /matches/{id}` with recalculation, `POST /games/{id}/recalculate` full-history heal. 22 tests incl. control-game equivalence.
 
 **Tasks:**
 
@@ -856,16 +869,25 @@ The data layer has the most issues and requires significant restructuring.
 **Estimated Total:** 39-49 hours (8-16 weeks at 3-6 hrs/week)
 
 **Completion Criteria:**
-- [ ] Matchmaking generates balanced teams for 4-12 players
-- [ ] Fairness score accurately reflects team balance
-- [ ] Algorithm handles constraints (exclude players, force teammates)
-- [ ] Performance: <2 seconds for 12 players
-- [ ] Algorithm documented with examples
+- [x] Matchmaking generates balanced teams for 4-12 players
+- [x] Fairness score accurately reflects team balance
+- [x] Algorithm handles constraints (exclude players, force teammates)
+- [x] Performance: <2 seconds for 12 players (test-enforced)
+- [x] Algorithm documented with examples (docs/matchmaking-algorithm.md)
 
 ---
 
-### Phase 2: Frontend Development
+### Phase 2: Frontend Development ✅ COMPLETED
+
+**Completed:** 2026-07-03
+
 **Goal:** Build user-facing interface for core features
+
+**Implementation Notes:**
+- `frontend/`: Vite + React 19 + TypeScript + Tailwind CSS 4, React Query for server state, Recharts for the rating-history chart, typed axios API client, dev proxy to :8000
+- All four core flows shipped: Leaderboard (sortable), Record Match (teams, draw support, metadata, inline player creation, instant rating deltas), Matchmaking (constraints UI, fairness meters, handoff to Record), Player Profile (per-game stats, rating chart derived from stored before/change, recent matches); plus Games management and Matches history with delete
+- Production build type-checks clean; oxlint clean; full-stack smoke test of every flow passed
+- Rating history chart is derived client-side from `rating_info_before` + `rating_info_change` (no dedicated endpoint needed)
 
 **Tasks:**
 
@@ -894,7 +916,10 @@ The data layer has the most issues and requires significant restructuring.
 
 ---
 
-### Phase 3: Integration, Polish & Deployment
+### Phase 3: Integration, Polish & Deployment 🔶 CODE COMPLETE (deployment pending)
+
+**Status (2026-07-03):** Everything buildable locally is done: production Docker for backend and frontend (nginx + SPA fallback + /api proxy), compose prod overlay, GitHub Actions CI (backend lint/types/tests, frontend lint/build, Docker builds), CORS via `CORS_ORIGINS`, security headers middleware. Remaining tasks need human accounts: pushing to GitHub (CI activates on push), Railway/Render + Vercel/Netlify deployment, Sentry. See HUMAN_ACTIONS (local, untracked) for the exact steps.
+
 **Goal:** Connect all pieces, deploy to production, and prepare for public use
 
 **Tasks:**
@@ -924,7 +949,10 @@ The data layer has the most issues and requires significant restructuring.
 
 ---
 
-### Phase 4: Documentation & Open Source Preparation
+### Phase 4: Documentation & Open Source Preparation 🔶 MOSTLY COMPLETE
+
+**Status (2026-07-03):** README (setup, API reference, env vars, structure), CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue/PR templates, `docs/architecture.md`, and `docs/matchmaking-algorithm.md` (the algorithm "paper") are done. Remaining: screenshots/demo GIF, blog post, and GitHub repository presentation — these need a pushed repo and human judgment.
+
 **Goal:** Make project accessible and professional for public release
 
 **Tasks:**
