@@ -127,6 +127,8 @@ Header: wordmark · nav · game switcher (right-aligned, custom listbox showing
 the game's rating strategy as a caption). Mobile (<640px): nav collapses into
 a fixed bottom tab bar (5 slots: Leaderboard, Record, Session, Matches,
 More→sheet with Matchmaking/Games); header keeps wordmark + game switcher.
+*(Shipped: responsive wrapping header. The bottom tab bar and an
+on-device phone pass are follow-ups — see §7.)*
 
 ### 5.2 Component kit (`components/ui.tsx`)
 `Button` (primary ember / secondary outline / ghost / danger, sm+md sizes),
@@ -230,13 +232,18 @@ Each phase: implement → `npm run build` + oxlint green → commit → next.
 - [x] **P4 — Leaderboard + Matches redesign.** (`feat`)
 - [x] **P5 — Profile + Games + Matchmaking polish**, N-team send-to-record.
   (`feat`)
-- [ ] **P6 — E2E pass**: Chrome click-through against live data, mobile
-  viewport check, fixes; lockfile cross-platform check (`docker build`).
-  (`fix`/`chore`)
+- [x] **P6 — E2E pass**: Chrome click-through against live data (all six
+  pages; leaderboard display modes; game switching; golf FFA history;
+  3-team matchmaking → Record handoff with live odds); lockfile
+  cross-platform check (`docker build` green). Destructive flows
+  (delete, live recording) verified in code only — no writes to the
+  live database. (`docs`)
 
 ## 7. Non-goals (this cycle)
 
-Backend changes (everything needed already exists); auth/multi-tenancy;
+Backend changes (everything needed already exists); mobile bottom tab
+bar and on-device phone pass (grids stack below `sm`/`lg`, but the "at
+the table" posture deserves a dedicated pass); auth/multi-tenancy;
 uneven team sizes in matchmaking UI; player-filter on Matches; PWA offline
 session recording; drag-and-drop (tap interactions first — drag is
 enhancement, not baseline).
