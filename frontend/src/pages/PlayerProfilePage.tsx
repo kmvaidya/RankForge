@@ -40,11 +40,11 @@ function ChemistryList({
 }) {
   return (
     <div>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <h3 className="mb-2 font-display text-xs font-semibold uppercase tracking-wider text-faint">
         {title}
       </h3>
       {entries.length === 0 && (
-        <p className="text-sm text-slate-600">{emptyHint}</p>
+        <p className="text-sm text-faint">{emptyHint}</p>
       )}
       <ul className="space-y-1.5">
         {entries.slice(0, 6).map((e) => (
@@ -54,19 +54,19 @@ function ChemistryList({
           >
             <Link
               to={`/players/${e.player_id}`}
-              className="truncate font-medium text-indigo-300 hover:text-indigo-200 hover:underline"
+              className="truncate font-medium text-ink hover:text-ember"
             >
               {e.player_name}
             </Link>
             <span
-              className="shrink-0 tabular-nums text-slate-400"
+              className="shrink-0 font-data text-mute"
               title={`Raw ${(e.win_rate * 100).toFixed(0)}% over ${e.matches} matches; displayed rate is confidence-adjusted`}
             >
               {e.wins}–{e.losses}
               {e.draws > 0 && `–${e.draws}`}{' '}
               <span
                 className={
-                  e.shrunk_win_rate >= 0.5 ? 'text-emerald-400' : 'text-rose-400'
+                  e.shrunk_win_rate >= 0.5 ? 'text-win' : 'text-loss'
                 }
               >
                 {(e.shrunk_win_rate * 100).toFixed(0)}%
@@ -168,10 +168,10 @@ export default function PlayerProfilePage() {
               <button
                 key={gameStats.game.id}
                 onClick={() => setSelectedGameId(gameStats.game.id)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
                   gameStats.game.id === activeGameId
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                    ? 'bg-ember text-ember-ink'
+                    : 'bg-raised text-mute hover:bg-line'
                 }`}
               >
                 {gameStats.game.name}
@@ -182,38 +182,38 @@ export default function PlayerProfilePage() {
           {activeGame && (
             <div className="mb-6 grid gap-3 sm:grid-cols-4">
               <Card className="p-4">
-                <p className="text-xs uppercase tracking-wide text-slate-500">
+                <p className="text-xs uppercase tracking-wide text-faint">
                   Rating
                 </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums">
+                <p className="mt-1 text-2xl font-bold font-data">
                   {Math.round(activeGame.rating_info.rating)}
-                  <span className="ml-2 text-sm font-normal text-slate-500">
+                  <span className="ml-2 text-sm font-normal text-faint">
                     ± {Math.round(activeGame.rating_info.rd)}
                   </span>
                 </p>
               </Card>
               <Card className="p-4">
-                <p className="text-xs uppercase tracking-wide text-slate-500">
+                <p className="text-xs uppercase tracking-wide text-faint">
                   Matches
                 </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums">
+                <p className="mt-1 text-2xl font-bold font-data">
                   {activeGame.matches_played}
                 </p>
               </Card>
               <Card className="p-4">
-                <p className="text-xs uppercase tracking-wide text-slate-500">
+                <p className="text-xs uppercase tracking-wide text-faint">
                   Record
                 </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums">
+                <p className="mt-1 text-2xl font-bold font-data">
                   {activeGame.wins}–{activeGame.losses}
                   {activeGame.draws > 0 && `–${activeGame.draws}`}
                 </p>
               </Card>
               <Card className="p-4">
-                <p className="text-xs uppercase tracking-wide text-slate-500">
+                <p className="text-xs uppercase tracking-wide text-faint">
                   Win rate
                 </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums">
+                <p className="mt-1 text-2xl font-bold font-data">
                   {(activeGame.win_rate * 100).toFixed(0)}%
                 </p>
               </Card>
@@ -222,13 +222,13 @@ export default function PlayerProfilePage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="p-4">
-              <h2 className="mb-3 text-sm font-semibold text-slate-300">
+              <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
                 Rating history
               </h2>
               {history.isPending && <Spinner />}
               {chartData.length < 2 ? (
                 !history.isPending && (
-                  <p className="py-8 text-center text-sm text-slate-500">
+                  <p className="py-8 text-center text-sm text-faint">
                     Need a couple of matches to draw a trend.
                   </p>
                 )
@@ -236,15 +236,15 @@ export default function PlayerProfilePage() {
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={chartData}>
-                      <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
+                      <CartesianGrid stroke="#262b31" strokeDasharray="3 3" />
                       <XAxis
                         dataKey="label"
-                        stroke="#64748b"
+                        stroke="#71787f"
                         fontSize={11}
                         tickLine={false}
                       />
                       <YAxis
-                        stroke="#64748b"
+                        stroke="#71787f"
                         fontSize={11}
                         tickLine={false}
                         domain={['auto', 'auto']}
@@ -252,17 +252,17 @@ export default function PlayerProfilePage() {
                       />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: '#0f172a',
-                          border: '1px solid #334155',
+                          backgroundColor: '#131518',
+                          border: '1px solid #3a4149',
                           borderRadius: 8,
-                          color: '#e2e8f0',
+                          color: '#f2f3f5',
                         }}
                       />
                       <Area
                         type="monotone"
                         dataKey="band"
                         stroke="none"
-                        fill="#6366f1"
+                        fill="#ff6a3d"
                         fillOpacity={0.09}
                         activeDot={false}
                         name="rating ± 2·RD"
@@ -270,9 +270,9 @@ export default function PlayerProfilePage() {
                       <Line
                         type="monotone"
                         dataKey="rating"
-                        stroke="#818cf8"
+                        stroke="#ff6a3d"
                         strokeWidth={2}
-                        dot={{ r: 2.5, fill: '#818cf8' }}
+                        dot={{ r: 2.5, fill: '#ff6a3d' }}
                       />
                     </ComposedChart>
                   </ResponsiveContainer>
@@ -281,15 +281,15 @@ export default function PlayerProfilePage() {
             </Card>
 
             <Card className="p-4">
-              <h2 className="mb-3 text-sm font-semibold text-slate-300">
+              <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
                 Recent matches
               </h2>
               {recentMatches.length === 0 && !history.isPending && (
-                <p className="py-8 text-center text-sm text-slate-500">
+                <p className="py-8 text-center text-sm text-faint">
                   No matches for this game.
                 </p>
               )}
-              <ul className="divide-y divide-slate-800/60">
+              <ul className="divide-y divide-line/60">
                 {recentMatches.map((match) => {
                   const me = match.participants.find(
                     (p) => p.player_id === id,
@@ -304,10 +304,10 @@ export default function PlayerProfilePage() {
                         <span
                           className={`mr-2 inline-block w-10 rounded px-1.5 py-0.5 text-center text-xs font-bold uppercase ${
                             klass === 'win'
-                              ? 'bg-emerald-950/80 text-emerald-400'
+                              ? 'bg-win/10 text-win'
                               : klass === 'loss'
-                                ? 'bg-red-950/80 text-red-400'
-                                : 'bg-slate-800 text-slate-400'
+                                ? 'bg-loss/10 text-loss'
+                                : 'bg-raised text-mute'
                           }`}
                         >
                           {klass === 'win'
@@ -318,7 +318,7 @@ export default function PlayerProfilePage() {
                                 ? 'D'
                                 : '—'}
                         </span>
-                        <span className="text-slate-400">
+                        <span className="text-mute">
                           {new Date(match.played_at).toLocaleDateString()} · vs{' '}
                           {match.participants
                             .filter((p) => p.player_id !== id)
@@ -342,10 +342,10 @@ export default function PlayerProfilePage() {
             (chemistry.data.partners.length > 0 ||
               chemistry.data.rivals.length > 0) && (
               <Card className="mt-6 p-4">
-                <h2 className="mb-3 text-sm font-semibold text-slate-300">
+                <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
                   Partners &amp; head-to-head
                   {activeGame && (
-                    <span className="ml-2 font-normal text-slate-500">
+                    <span className="ml-2 font-normal text-faint">
                       {activeGame.game.name}
                     </span>
                   )}
@@ -362,7 +362,7 @@ export default function PlayerProfilePage() {
                     emptyHint="No opponents yet."
                   />
                 </div>
-                <p className="mt-3 text-xs text-slate-600">
+                <p className="mt-3 text-xs text-faint">
                   Rates are confidence-adjusted: small samples are pulled
                   toward the overall mean, so a 2–0 pairing doesn't read as an
                   unbeatable 100%. Hover a record for the raw rate.

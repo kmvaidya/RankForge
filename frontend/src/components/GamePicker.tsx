@@ -4,7 +4,7 @@ import { useEffect, useMemo } from 'react'
 import { listGames } from '../lib/api'
 import { useSelectedGame } from '../lib/GameContext'
 
-/** Game dropdown bound to the shared selected-game context. */
+/** Global game switcher in the app header, bound to shared context. */
 export default function GamePicker() {
   const { gameId, setGameId } = useSelectedGame()
   const { data } = useQuery({ queryKey: ['games'], queryFn: listGames })
@@ -20,11 +20,13 @@ export default function GamePicker() {
 
   return (
     <label className="flex items-center gap-2 text-sm">
-      <span className="text-slate-400">Game</span>
+      <span className="font-display text-xs font-semibold uppercase tracking-wider text-faint">
+        Game
+      </span>
       <select
         value={gameId ?? ''}
         onChange={(e) => setGameId(e.target.value ? Number(e.target.value) : null)}
-        className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium focus:border-indigo-500 focus:outline-none"
+        className="rounded border border-line bg-raised px-2.5 py-1.5 text-sm font-medium text-ink focus:border-ember focus:outline-none focus-visible:ring-2 focus-visible:ring-ember/60"
       >
         {games.length === 0 && <option value="">No games yet</option>}
         {games.map((g) => (

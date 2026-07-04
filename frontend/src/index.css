@@ -1,5 +1,61 @@
 @import "tailwindcss";
 
+/* Self-hosted type: Barlow superfamily (industrial signage heritage) for
+   body + display, IBM Plex Mono for data numerals. */
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/500.css";
+@import "@fontsource/barlow/600.css";
+@import "@fontsource/barlow-condensed/500.css";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+/* "Forge" design tokens — see docs/frontend-redesign.md §3.
+   Warm graphite grounds, one ember accent (interaction + brand only),
+   dedicated outcome colors, podium metals. */
+@theme {
+  --color-bg: #0b0c0e;
+  --color-surface: #131518;
+  --color-raised: #1b1e23;
+  --color-line: #262b31;
+  --color-line-strong: #3a4149;
+
+  --color-ink: #f2f3f5;
+  --color-mute: #a9b0b9;
+  --color-faint: #71787f;
+
+  --color-ember: #ff6a3d;
+  --color-ember-bright: #ff8a5c;
+  --color-ember-ink: #211008;
+
+  --color-win: #3ecf8e;
+  --color-loss: #f0566a;
+  --color-warn: #f5b83d;
+  --color-info: #5b9dd9;
+
+  --color-gold: #e8b33c;
+  --color-silver: #c9cdd3;
+  --color-bronze: #c08a5a;
+
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Barlow", ui-sans-serif, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+}
+
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  @apply bg-bg font-sans text-ink antialiased;
+}
+
+::selection {
+  @apply bg-ember/30;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

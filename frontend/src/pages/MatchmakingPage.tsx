@@ -2,7 +2,6 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import GamePicker from '../components/GamePicker'
 import {
   Card,
   EmptyState,
@@ -86,13 +85,12 @@ export default function MatchmakingPage() {
       <PageHeader
         title="Matchmaking"
         subtitle="Generate the fairest possible teams from tonight's players"
-        actions={<GamePicker />}
       />
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
           <Card className="p-4">
-            <h2 className="mb-3 text-sm font-semibold text-slate-300">
+            <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
               Who's playing? ({selected.length} selected)
             </h2>
             {isPending && <Spinner />}
@@ -100,13 +98,13 @@ export default function MatchmakingPage() {
               {players.map((player) => (
                 <label
                   key={player.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-slate-800/60"
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-raised"
                 >
                   <input
                     type="checkbox"
                     checked={selected.includes(player.id)}
                     onChange={() => togglePlayer(player.id)}
-                    className="accent-indigo-500"
+                    className="accent-ember"
                   />
                   <span className="font-medium">{player.name}</span>
                 </label>
@@ -115,13 +113,13 @@ export default function MatchmakingPage() {
           </Card>
 
           <Card className="p-4">
-            <h2 className="mb-3 text-sm font-semibold text-slate-300">Options</h2>
+            <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">Options</h2>
             <label className="flex items-center justify-between text-sm">
-              <span className="text-slate-400">Teams</span>
+              <span className="text-mute">Teams</span>
               <select
                 value={teamCount}
                 onChange={(e) => setTeamCount(Number(e.target.value))}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5"
+                className="rounded border border-line-strong bg-raised px-3 py-1.5"
               >
                 {[2, 3, 4].map((n) => (
                   <option key={n} value={n}>
@@ -132,14 +130,14 @@ export default function MatchmakingPage() {
             </label>
 
             <div className="mt-4">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <h3 className="mb-2 font-display text-xs font-semibold uppercase tracking-wider text-faint">
                 Constraints
               </h3>
               <div className="flex flex-wrap items-center gap-1.5 text-sm">
                 <select
                   value={pairKind}
                   onChange={(e) => setPairKind(e.target.value as PairKind)}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                  className="rounded border border-line-strong bg-raised px-2 py-1 text-xs"
                 >
                   <option value="together">Keep together</option>
                   <option value="apart">Keep apart</option>
@@ -147,7 +145,7 @@ export default function MatchmakingPage() {
                 <select
                   value={pairA}
                   onChange={(e) => setPairA(e.target.value ? Number(e.target.value) : '')}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                  className="rounded border border-line-strong bg-raised px-2 py-1 text-xs"
                 >
                   <option value="">Player…</option>
                   {selected.map((id) => (
@@ -159,7 +157,7 @@ export default function MatchmakingPage() {
                 <select
                   value={pairB}
                   onChange={(e) => setPairB(e.target.value ? Number(e.target.value) : '')}
-                  className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                  className="rounded border border-line-strong bg-raised px-2 py-1 text-xs"
                 >
                   <option value="">Player…</option>
                   {selected.map((id) => (
@@ -171,7 +169,7 @@ export default function MatchmakingPage() {
                 <button
                   onClick={addPair}
                   disabled={pairA === '' || pairB === '' || pairA === pairB}
-                  className="rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-medium hover:bg-slate-700 disabled:opacity-40"
+                  className="rounded bg-raised px-2.5 py-1 text-xs font-medium hover:bg-line disabled:opacity-40"
                 >
                   Add
                 </button>
@@ -186,8 +184,8 @@ export default function MatchmakingPage() {
                     title="Remove constraint"
                     className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                       pair.kind === 'together'
-                        ? 'bg-emerald-950/60 text-emerald-300'
-                        : 'bg-red-950/60 text-red-300'
+                        ? 'bg-win/10 text-win'
+                        : 'bg-loss/10 text-loss'
                     }`}
                   >
                     {pair.kind === 'together' ? '🤝' : '⚔️'} {nameOf(pair.a)} +{' '}
@@ -204,7 +202,7 @@ export default function MatchmakingPage() {
                 selected.length < Math.max(teamCount, 2) ||
                 generate.isPending
               }
-              className="mt-4 w-full rounded-lg bg-indigo-600 py-2.5 font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="mt-4 w-full rounded bg-ember py-2.5 font-semibold text-ember-ink transition-colors hover:bg-ember-bright disabled:cursor-not-allowed disabled:opacity-40"
             >
               {generate.isPending ? 'Optimizing…' : 'Generate Teams'}
             </button>
@@ -224,7 +222,7 @@ export default function MatchmakingPage() {
 
           {result && (
             <>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-faint">
                 {result.configurations_evaluated.toLocaleString()} configurations
                 evaluated via {result.method}.
               </p>
@@ -232,7 +230,7 @@ export default function MatchmakingPage() {
                 <Card key={index} className="p-4">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-bold text-slate-300">
+                      <span className="text-sm font-bold text-mute">
                         Option {index + 1}
                       </span>
                       <FairnessMeter value={config.fairness} />
@@ -250,7 +248,7 @@ export default function MatchmakingPage() {
                             ),
                           )
                         }
-                        className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold hover:bg-slate-700"
+                        className="rounded bg-raised px-3 py-1.5 text-xs font-semibold hover:bg-line"
                       >
                         Use this → Record
                       </button>
@@ -268,13 +266,13 @@ export default function MatchmakingPage() {
                     {config.teams.map((team, teamIndex) => (
                       <div
                         key={teamIndex}
-                        className="rounded-lg border border-slate-800 p-3"
+                        className="rounded border border-line p-3"
                       >
                         <div className="mb-2 flex items-baseline justify-between">
-                          <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <span className="font-display text-xs font-semibold uppercase tracking-wider text-faint">
                             Team {teamIndex + 1}
                           </span>
-                          <span className="text-xs tabular-nums text-slate-400">
+                          <span className="text-xs font-data text-mute">
                             μ {Math.round(config.team_ratings[teamIndex].mu)} ·{' '}
                             {(config.win_probabilities[teamIndex] * 100).toFixed(0)}
                             % win
@@ -289,7 +287,7 @@ export default function MatchmakingPage() {
                               <span className="font-medium">
                                 {member.player.name}
                               </span>
-                              <span className="tabular-nums text-slate-500">
+                              <span className="font-data text-faint">
                                 {Math.round(member.rating)}
                               </span>
                             </li>

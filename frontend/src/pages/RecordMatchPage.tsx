@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
 import BulkAddPlayers from '../components/BulkAddPlayers'
-import GamePicker from '../components/GamePicker'
 import {
   Card,
   ErrorNote,
@@ -199,29 +198,29 @@ export default function RecordMatchPage() {
 
   const teamBox = (team: 1 | 2, ids: number[]) => (
     <div
-      className={`rounded-lg border p-3 ${
+      className={`rounded border p-3 ${
         winner === team
-          ? 'border-emerald-700 bg-emerald-950/20'
-          : 'border-slate-800'
+          ? 'border-win/60 bg-win/5'
+          : 'border-line'
       }`}
     >
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-semibold text-slate-300">
+        <span className="font-display text-sm font-semibold uppercase tracking-wider text-mute">
           Team {team}
         </span>
-        <span className="text-xs text-slate-500">{ids.length} player(s)</span>
+        <span className="text-xs text-faint">{ids.length} player(s)</span>
       </div>
       <div className="flex min-h-8 flex-wrap gap-1.5">
         {ids.map((id) => (
           <span
             key={id}
-            className="rounded-full bg-slate-800 px-2.5 py-1 text-xs font-medium"
+            className="rounded-full bg-raised px-2.5 py-1 text-xs font-medium"
           >
             {players.find((p) => p.id === id)?.name ?? id}
           </span>
         ))}
         {ids.length === 0 && (
-          <span className="text-xs text-slate-600">
+          <span className="text-xs text-faint">
             Select players below…
           </span>
         )}
@@ -234,7 +233,6 @@ export default function RecordMatchPage() {
       <PageHeader
         title="Record Match"
         subtitle="Ratings update the moment you submit"
-        actions={<GamePicker />}
       />
 
       {result && (
@@ -242,7 +240,7 @@ export default function RecordMatchPage() {
           <SuccessNote>
             Match #{result.id} recorded — rating changes below.
             {upset && (
-              <span className="ml-2 font-semibold text-amber-300">
+              <span className="ml-2 font-semibold text-warn">
                 Upset! Team {upset.team} won at{' '}
                 {Math.round(upset.odds * 100)}% odds.
               </span>
@@ -253,7 +251,7 @@ export default function RecordMatchPage() {
               {result.participants.map((p) => (
                 <div
                   key={p.id}
-                  className="flex items-center justify-between rounded-lg bg-slate-800/50 px-3 py-2"
+                  className="flex items-center justify-between rounded bg-raised px-3 py-2"
                 >
                   <span className="font-medium">
                     <Link
@@ -262,11 +260,11 @@ export default function RecordMatchPage() {
                     >
                       {p.player.name}
                     </Link>
-                    <span className="ml-2 text-xs text-slate-500">
+                    <span className="ml-2 text-xs text-faint">
                       Team {p.team_id}
                     </span>
                   </span>
-                  <span className="tabular-nums">
+                  <span className="font-data">
                     {p.rating_info_before
                       ? Math.round(p.rating_info_before.rating)
                       : '—'}{' '}
@@ -302,14 +300,14 @@ export default function RecordMatchPage() {
           {canPredict && odds && odds.teams.length === 2 && (
             <Card className="p-3">
               <div className="mb-1.5 flex items-center justify-between text-xs">
-                <span className="font-semibold tabular-nums text-slate-300">
+                <span className="font-semibold font-data text-mute">
                   {Math.round(odds.teams[0].win_probability * 100)}%
                 </span>
-                <span className="flex items-center gap-2 text-slate-500">
+                <span className="flex items-center gap-2 text-faint">
                   Pre-match odds
                   {odds.lopsided && <Pill tone="warn">lopsided matchup</Pill>}
                 </span>
-                <span className="font-semibold tabular-nums text-slate-300">
+                <span className="font-semibold font-data text-mute">
                   {Math.round(odds.teams[1].win_probability * 100)}%
                 </span>
               </div>
@@ -318,7 +316,7 @@ export default function RecordMatchPage() {
           )}
 
           <Card className="p-4">
-            <h2 className="mb-3 text-sm font-semibold text-slate-300">
+            <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
               Assign players
             </h2>
             {isPending && <Spinner />}
@@ -328,7 +326,7 @@ export default function RecordMatchPage() {
                 return (
                   <div
                     key={player.id}
-                    className="flex items-center justify-between rounded-lg border border-slate-800 px-3 py-1.5"
+                    className="flex items-center justify-between rounded border border-line px-3 py-1.5"
                   >
                     <span className="text-sm font-medium">{player.name}</span>
                     <div className="flex gap-1">
@@ -338,8 +336,8 @@ export default function RecordMatchPage() {
                           onClick={() => toggle(player.id, t)}
                           className={`rounded px-2 py-0.5 text-xs font-semibold transition-colors ${
                             team === t
-                              ? 'bg-indigo-600 text-white'
-                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                              ? 'bg-ember text-ember-ink'
+                              : 'bg-raised text-mute hover:bg-line'
                           }`}
                         >
                           T{t}
@@ -360,18 +358,18 @@ export default function RecordMatchPage() {
                     addPlayer.mutate(newPlayerName.trim())
                 }}
                 placeholder="New player name…"
-                className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                className="flex-1 rounded border border-line-strong bg-raised px-3 py-1.5 text-sm focus:border-ember focus:outline-none"
               />
               <button
                 onClick={() => addPlayer.mutate(newPlayerName.trim())}
                 disabled={newPlayerName.trim().length < 2 || addPlayer.isPending}
-                className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+                className="rounded bg-raised px-3 py-1.5 text-sm font-medium hover:bg-line disabled:opacity-50"
               >
                 Add player
               </button>
             </div>
             {addPlayer.error && (
-              <p className="mt-2 text-sm text-red-400">
+              <p className="mt-2 text-sm text-loss">
                 {errorMessage(addPlayer.error)}
               </p>
             )}
@@ -381,7 +379,7 @@ export default function RecordMatchPage() {
 
         <div className="space-y-4">
           <Card className="p-4">
-            <h2 className="mb-3 text-sm font-semibold text-slate-300">Result</h2>
+            <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">Result</h2>
             <div className="grid grid-cols-3 gap-2">
               {(
                 [
@@ -393,10 +391,10 @@ export default function RecordMatchPage() {
                 <button
                   key={String(value)}
                   onClick={() => pickWinner(value)}
-                  className={`rounded-lg px-2 py-2 text-xs font-semibold transition-colors ${
+                  className={`rounded px-2 py-2 text-xs font-semibold transition-colors ${
                     winner === value
-                      ? 'bg-indigo-600 text-white'
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                      ? 'bg-ember text-ember-ink'
+                      : 'bg-raised text-mute hover:bg-line'
                   }`}
                 >
                   {label}
@@ -413,7 +411,7 @@ export default function RecordMatchPage() {
               ).map(([label, value, setter]) => (
                 <label
                   key={label}
-                  className="block text-xs font-medium text-slate-400"
+                  className="block font-display text-xs font-semibold uppercase tracking-wider text-faint"
                 >
                   {label}
                   <input
@@ -421,56 +419,56 @@ export default function RecordMatchPage() {
                     onChange={(e) => setter(e.target.value)}
                     inputMode="numeric"
                     placeholder={preset !== null ? String(preset) : '—'}
-                    className={`mt-1 w-full rounded-lg border bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none ${
+                    className={`mt-1 w-full rounded border bg-raised px-3 py-1.5 text-sm text-ink focus:outline-none ${
                       scoresValid
-                        ? 'border-slate-700 focus:border-indigo-500'
-                        : 'border-red-700 focus:border-red-500'
+                        ? 'border-line-strong focus:border-ember'
+                        : 'border-loss focus:border-loss'
                     }`}
                   />
                 </label>
               ))}
             </div>
             {!scoresValid && (
-              <p className="mt-1 text-xs text-red-400">
+              <p className="mt-1 text-xs text-loss">
                 Enter both scores as non-negative numbers, or leave both empty.
               </p>
             )}
 
             {weightsEnabled && (
-              <label className="mt-3 block text-xs font-medium text-slate-400">
+              <label className="mt-3 block font-display text-xs font-semibold uppercase tracking-wider text-faint">
                 Match weight (optional)
                 <input
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
                   inputMode="decimal"
                   placeholder="1 = normal, 5 = counts 5×"
-                  className={`mt-1 w-full rounded-lg border bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none ${
+                  className={`mt-1 w-full rounded border bg-raised px-3 py-1.5 text-sm text-ink focus:outline-none ${
                     weightValid
-                      ? 'border-slate-700 focus:border-indigo-500'
-                      : 'border-red-700 focus:border-red-500'
+                      ? 'border-line-strong focus:border-ember'
+                      : 'border-loss focus:border-loss'
                   }`}
                 />
-                <span className="mt-1 block text-[11px] text-slate-500">
+                <span className="mt-1 block text-[11px] text-faint">
                   Scales how much this match moves ratings. Must be a positive
                   number.
                 </span>
               </label>
             )}
 
-            <label className="mt-3 block text-xs font-medium text-slate-400">
+            <label className="mt-3 block font-display text-xs font-semibold uppercase tracking-wider text-faint">
               Notes (optional)
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
+                className="mt-1 w-full rounded border border-line-strong bg-raised px-3 py-1.5 text-sm text-ink focus:border-ember focus:outline-none"
               />
             </label>
 
             <button
               onClick={handleSubmit}
               disabled={!canSubmit}
-              className="mt-4 w-full rounded-lg bg-indigo-600 py-2.5 font-semibold text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="mt-4 w-full rounded bg-ember py-2.5 font-semibold text-ember-ink transition-colors hover:bg-ember-bright disabled:cursor-not-allowed disabled:opacity-40"
             >
               {submit.isPending ? 'Submitting…' : 'Submit Match'}
             </button>

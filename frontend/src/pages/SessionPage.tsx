@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
-import GamePicker from '../components/GamePicker'
 import {
   Card,
   EmptyState,
@@ -250,13 +249,13 @@ export default function SessionPage() {
           subtitle={`${summary.matchesRecorded} matches recorded`}
         />
         <Card className="max-w-md p-4">
-          <ul className="divide-y divide-slate-800/60 text-sm">
+          <ul className="divide-y divide-line/60 text-sm">
             {rows.map(([id, games]) => {
               const rec = summary.record[Number(id)] ?? { w: 0, l: 0 }
               return (
                 <li key={id} className="flex justify-between py-2">
                   <span className="font-medium">{playerName(Number(id))}</span>
-                  <span className="tabular-nums text-slate-400">
+                  <span className="font-data text-mute">
                     {games} games · {rec.w}–{rec.l}
                   </span>
                 </li>
@@ -266,7 +265,7 @@ export default function SessionPage() {
         </Card>
         <button
           onClick={() => setSummary(null)}
-          className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-500"
+          className="mt-4 rounded bg-ember px-4 py-2 font-semibold text-ember-ink hover:bg-ember-bright"
         >
           New session
         </button>
@@ -281,7 +280,6 @@ export default function SessionPage() {
         <PageHeader
           title="Session"
           subtitle="Run a night of play: courts, an up-next queue, fair rotation"
-          actions={<GamePicker />}
         />
         {gameId === null && (
           <EmptyState
@@ -292,7 +290,7 @@ export default function SessionPage() {
         {gameId !== null && (
           <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
             <Card className="p-4">
-              <h2 className="mb-3 text-sm font-semibold text-slate-300">
+              <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
                 Who's playing? ({selected.length} selected)
               </h2>
               {isPending && <Spinner />}
@@ -309,10 +307,10 @@ export default function SessionPage() {
                             : [...ids, player.id],
                         )
                       }
-                      className={`rounded-lg border px-3 py-1.5 text-left text-sm font-medium transition-colors ${
+                      className={`rounded border px-3 py-1.5 text-left text-sm font-medium transition-colors ${
                         active
-                          ? 'border-indigo-500 bg-indigo-950/40 text-indigo-200'
-                          : 'border-slate-800 text-slate-300 hover:bg-slate-800/40'
+                          ? 'border-ember bg-ember/10 text-ink'
+                          : 'border-line text-mute hover:bg-raised'
                       }`}
                     >
                       {player.name}
@@ -322,36 +320,36 @@ export default function SessionPage() {
               </div>
             </Card>
             <Card className="h-fit p-4">
-              <h2 className="mb-3 text-sm font-semibold text-slate-300">
+              <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
                 Session setup
               </h2>
-              <label className="block text-xs font-medium text-slate-400">
+              <label className="block font-display text-xs font-semibold uppercase tracking-wider text-faint">
                 Name (optional)
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder={`Session ${new Date().toLocaleDateString()}`}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded border border-line-strong bg-raised px-3 py-1.5 text-sm focus:border-ember focus:outline-none"
                 />
               </label>
-              <label className="mt-3 block text-xs font-medium text-slate-400">
+              <label className="mt-3 block font-display text-xs font-semibold uppercase tracking-wider text-faint">
                 Team size
                 <select
                   value={teamSize}
                   onChange={(e) => setTeamSize(Number(e.target.value))}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded border border-line-strong bg-raised px-3 py-1.5 text-sm focus:border-ember focus:outline-none"
                 >
                   <option value="1">Singles (1v1)</option>
                   <option value="2">Doubles (2v2)</option>
                   <option value="3">3v3</option>
                 </select>
               </label>
-              <label className="mt-3 block text-xs font-medium text-slate-400">
+              <label className="mt-3 block font-display text-xs font-semibold uppercase tracking-wider text-faint">
                 Courts
                 <select
                   value={courtCount}
                   onChange={(e) => setCourtCount(Number(e.target.value))}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none"
+                  className="mt-1 w-full rounded border border-line-strong bg-raised px-3 py-1.5 text-sm focus:border-ember focus:outline-none"
                 >
                   {[1, 2, 3, 4, 5, 6].map((n) => (
                     <option key={n} value={n}>
@@ -363,12 +361,12 @@ export default function SessionPage() {
               <button
                 onClick={start}
                 disabled={selected.length < teamSize * 2}
-                className="mt-4 w-full rounded-lg bg-indigo-600 py-2 font-semibold text-white hover:bg-indigo-500 disabled:opacity-40"
+                className="mt-4 w-full rounded bg-ember py-2 font-semibold text-ember-ink hover:bg-ember-bright disabled:opacity-40"
               >
                 Start session
               </button>
               {selected.length < teamSize * 2 && (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-faint">
                   Need at least {teamSize * 2} players for one court.
                 </p>
               )}
@@ -391,7 +389,7 @@ export default function SessionPage() {
               setSummary(session)
               setSession(null)
             }}
-            className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-700"
+            className="rounded bg-raised px-3 py-1.5 text-sm font-medium text-mute hover:bg-line"
           >
             End session
           </button>
@@ -404,7 +402,7 @@ export default function SessionPage() {
           {session.courts.map((court, index) => (
             <Card key={index} className="p-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+                <h3 className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-wider text-mute">
                   Court {index + 1}
                   {court.teams && court.lopsided && (
                     <Pill tone="warn">lopsided</Pill>
@@ -414,7 +412,7 @@ export default function SessionPage() {
                   <button
                     onClick={() => fillCourt(index, true)}
                     disabled={busyCourt !== null}
-                    className="text-xs font-medium text-indigo-400 hover:text-indigo-300 disabled:opacity-50"
+                    className="text-xs font-medium text-ember hover:text-ember disabled:opacity-50"
                   >
                     Shuffle
                   </button>
@@ -427,7 +425,7 @@ export default function SessionPage() {
                   disabled={
                     busyCourt !== null || session.bench.length < perCourt
                   }
-                  className="w-full rounded-lg border border-dashed border-slate-700 py-6 text-sm font-medium text-slate-400 hover:border-indigo-600 hover:text-indigo-300 disabled:opacity-40"
+                  className="w-full rounded border border-dashed border-line-strong py-6 text-sm font-medium text-mute hover:border-ember hover:text-ember disabled:opacity-40"
                 >
                   {busyCourt === index
                     ? 'Balancing teams…'
@@ -442,13 +440,13 @@ export default function SessionPage() {
                   {court.teams.map((team, t) => (
                     <div
                       key={t}
-                      className="mt-1 flex items-center justify-between rounded-lg bg-slate-800/50 px-3 py-2"
+                      className="mt-1 flex items-center justify-between rounded bg-raised px-3 py-2"
                     >
                       <span className="text-sm font-medium">
                         {team.map(playerName).join(' & ')}
                       </span>
                       {court.winProbabilities && (
-                        <span className="text-xs tabular-nums text-slate-500">
+                        <span className="text-xs font-data text-faint">
                           {(court.winProbabilities[t] * 100).toFixed(0)}%
                         </span>
                       )}
@@ -460,7 +458,7 @@ export default function SessionPage() {
                         key={team}
                         onClick={() => record.mutate({ index, winner: team })}
                         disabled={record.isPending}
-                        className="rounded-lg bg-emerald-800/70 py-2 text-xs font-semibold text-emerald-100 hover:bg-emerald-700 disabled:opacity-50"
+                        className="rounded bg-win/15 py-2 text-xs font-semibold text-win hover:bg-win/25 disabled:opacity-50"
                       >
                         Team {team} won
                       </button>
@@ -474,11 +472,11 @@ export default function SessionPage() {
 
         <div className="space-y-4">
           <Card className="p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-300">
+            <h3 className="mb-2 font-display text-sm font-semibold uppercase tracking-wider text-mute">
               Up next
             </h3>
             {session.bench.length === 0 && (
-              <p className="text-sm text-slate-600">Everyone is playing.</p>
+              <p className="text-sm text-faint">Everyone is playing.</p>
             )}
             <ol className="space-y-1 text-sm">
               {session.bench.map((id, position) => (
@@ -487,27 +485,27 @@ export default function SessionPage() {
                   className="flex items-center justify-between gap-2"
                 >
                   <span>
-                    <span className="mr-2 inline-block w-5 text-right tabular-nums text-slate-600">
+                    <span className="mr-2 inline-block w-5 text-right font-data text-faint">
                       {position + 1}.
                     </span>
                     <span
                       className={
                         (session.gamesPlayed[id] ?? 0) === minGames
-                          ? 'font-medium text-amber-300'
+                          ? 'font-medium text-warn'
                           : 'font-medium'
                       }
                     >
                       {playerName(id)}
                     </span>
                   </span>
-                  <span className="text-xs tabular-nums text-slate-500">
+                  <span className="text-xs font-data text-faint">
                     {session.gamesPlayed[id] ?? 0} played
                   </span>
                 </li>
               ))}
             </ol>
             {session.bench.length > 0 && (
-              <p className="mt-2 text-[11px] text-slate-600">
+              <p className="mt-2 text-[11px] text-faint">
                 Amber = fewest games (owed court time). Queue is
                 first-in-first-out.
               </p>
@@ -515,7 +513,7 @@ export default function SessionPage() {
           </Card>
 
           <Card className="p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-300">
+            <h3 className="mb-2 font-display text-sm font-semibold uppercase tracking-wider text-mute">
               Session record
             </h3>
             <ul className="space-y-1 text-sm">
@@ -530,9 +528,9 @@ export default function SessionPage() {
                   return (
                     <li key={id} className="flex justify-between gap-2">
                       <span>{playerName(Number(id))}</span>
-                      <span className="tabular-nums text-slate-400">
+                      <span className="font-data text-mute">
                         {rec.w}–{rec.l}{' '}
-                        <span className="text-slate-600">({games})</span>
+                        <span className="text-faint">({games})</span>
                       </span>
                     </li>
                   )

@@ -13,9 +13,9 @@ interface LineResult {
 }
 
 const STATUS_STYLE: Record<LineStatus, string> = {
-  added: 'text-emerald-400',
-  duplicate: 'text-amber-400',
-  error: 'text-red-400',
+  added: 'text-win',
+  duplicate: 'text-warn',
+  error: 'text-loss',
 }
 
 /** Paste-a-list player import: one name per line, per-line results.
@@ -78,7 +78,7 @@ export default function BulkAddPlayers() {
           setOpen(!open)
           setResults(null)
         }}
-        className="text-xs font-medium text-indigo-400 hover:text-indigo-300"
+        className="text-xs font-medium text-ember hover:text-ember"
       >
         {open ? '− Hide bulk add' : '+ Bulk add players (paste a list)'}
       </button>
@@ -90,25 +90,25 @@ export default function BulkAddPlayers() {
             onChange={(e) => setText(e.target.value)}
             rows={5}
             placeholder={'One name per line:\nAlice\nBob\nCharlie'}
-            className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+            className="w-full rounded border border-line-strong bg-raised px-3 py-2 text-sm focus:border-ember focus:outline-none"
           />
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-faint">
               {names.length} unique name{names.length === 1 ? '' : 's'} to
               import
             </span>
             <button
               onClick={runImport}
               disabled={names.length === 0 || busy}
-              className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+              className="rounded bg-raised px-3 py-1.5 text-sm font-medium hover:bg-line disabled:opacity-50"
             >
               {busy ? 'Importing…' : 'Import all'}
             </button>
           </div>
 
           {results && (
-            <div className="rounded-lg border border-slate-800 p-2">
-              <p className="mb-1 text-xs text-slate-400">
+            <div className="rounded border border-line p-2">
+              <p className="mb-1 text-xs text-mute">
                 {counts?.added ?? 0} added · {counts?.duplicate ?? 0} already
                 existed · {counts?.error ?? 0} failed
               </p>

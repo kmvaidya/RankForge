@@ -220,7 +220,7 @@ confirm).
 Each phase: implement → `npm run build` + oxlint green → commit → next.
 
 - [x] **P0 — this PRD** (`docs`)
-- [ ] **P1 — Foundation**: fonts, `@theme` tokens, component kit v2, app
+- [x] **P1 — Foundation**: fonts, `@theme` tokens, component kit v2, app
   shell with global game switcher, all pages mechanically migrated to tokens
   (no page restructures yet). (`feat`)
 - [ ] **P2 — Record match v2**: N teams, FFA, finishing-order entry,

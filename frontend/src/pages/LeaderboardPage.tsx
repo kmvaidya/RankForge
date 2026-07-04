@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import GamePicker from '../components/GamePicker'
 import {
   Avatar,
   Card,
@@ -146,7 +145,7 @@ export default function LeaderboardPage() {
 
   const header = (label: string, key: SortKey, align = 'text-right') => (
     <th
-      className={`cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400 hover:text-slate-200 ${align}`}
+      className={`cursor-pointer select-none px-3 py-2 text-xs font-semibold uppercase tracking-wide text-mute hover:text-ink ${align}`}
       onClick={() => toggleSort(key)}
     >
       {label}
@@ -162,25 +161,25 @@ export default function LeaderboardPage() {
         actions={
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-slate-400">Display</span>
+              <span className="text-mute">Display</span>
               <select
                 value={displayMode}
                 onChange={(e) => setDisplayMode(e.target.value as DisplayMode)}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium focus:border-indigo-500 focus:outline-none"
+                className="rounded border border-line-strong bg-raised px-3 py-1.5 font-medium focus:border-ember focus:outline-none"
               >
                 <option value="rating">Rating</option>
                 <option value="conservative">Conservative (R−2·RD)</option>
               </select>
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-slate-400">Min matches</span>
+              <span className="text-mute">Min matches</span>
               <select
                 value={typeof minFilter === 'number' ? String(minFilter) : minFilter}
                 onChange={(e) => {
                   const v = e.target.value
                   setMinFilter(v === 'auto' || v === 'off' ? v : Number(v))
                 }}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium focus:border-indigo-500 focus:outline-none"
+                className="rounded border border-line-strong bg-raised px-3 py-1.5 font-medium focus:border-ember focus:outline-none"
               >
                 <option value="auto">Auto ({autoThreshold(matchTotals?.total ?? 0)})</option>
                 <option value="off">Off</option>
@@ -189,7 +188,6 @@ export default function LeaderboardPage() {
                 <option value="25">25</option>
               </select>
             </label>
-            <GamePicker />
           </div>
         }
       />
@@ -219,10 +217,10 @@ export default function LeaderboardPage() {
       {rows.length > 0 && (
         <Card className="overflow-x-auto">
           <table className="w-full min-w-[560px] text-sm">
-            <thead className="border-b border-slate-800">
+            <thead className="border-b border-line">
               <tr>
                 {header('#', 'rank', 'text-left')}
-                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+                <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-mute">
                   Player
                 </th>
                 {header('Rating', 'rating')}
@@ -236,7 +234,7 @@ export default function LeaderboardPage() {
               {rows.map((entry) => (
                 <tr
                   key={entry.player.id}
-                  className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30"
+                  className="border-b border-line/60 last:border-0 hover:bg-raised/60"
                 >
                   <td className="px-3 py-2.5">
                     <RankBadge rank={entry.rank} />
@@ -246,7 +244,7 @@ export default function LeaderboardPage() {
                       <Avatar name={entry.player.name} size="sm" />
                       <Link
                         to={`/players/${entry.player.id}`}
-                        className="font-medium text-indigo-300 hover:text-indigo-200 hover:underline"
+                        className="font-medium text-ink hover:text-ember"
                       >
                         {entry.player.name}
                       </Link>
@@ -255,19 +253,19 @@ export default function LeaderboardPage() {
                       )}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 text-right font-bold tabular-nums">
+                  <td className="px-3 py-2.5 text-right font-bold font-data">
                     {Math.round(displayedRating(entry, displayMode))}
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     <ConfidenceBar rd={entry.rating_info.rd} />
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
+                  <td className="px-3 py-2.5 text-right font-data">
                     {statNumber(entry, 'matches_played')}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
+                  <td className="px-3 py-2.5 text-right font-data">
                     {statNumber(entry, 'wins')}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
+                  <td className="px-3 py-2.5 text-right font-data">
                     {(statNumber(entry, 'win_rate') * 100).toFixed(0)}%
                   </td>
                 </tr>
@@ -275,14 +273,14 @@ export default function LeaderboardPage() {
             </tbody>
           </table>
           {displayMode === 'conservative' && (
-            <p className="px-3 pt-3 text-xs text-slate-500">
+            <p className="px-3 pt-3 text-xs text-faint">
               Conservative display: each rating is its Glicko lower bound
               (rating − 2·RD) — a player must play enough to shrink their
               uncertainty before ranking high.
             </p>
           )}
           {hiddenCount > 0 && (
-            <p className="px-3 pt-3 text-xs text-slate-500">
+            <p className="px-3 pt-3 text-xs text-faint">
               {hiddenCount} provisional player{hiddenCount === 1 ? '' : 's'}{' '}
               hidden (fewer than {threshold}{' '}
               {threshold === 1 ? 'match' : 'matches'}) — Glicko-2 ratings are
@@ -291,13 +289,13 @@ export default function LeaderboardPage() {
             </p>
           )}
           {health && (
-            <p className="px-3 pt-2 text-xs text-slate-600">
+            <p className="px-3 pt-2 text-xs text-faint">
               League health: mean rating{' '}
-              <span className="tabular-nums">
+              <span className="font-data">
                 {Math.round(health.mean_rating)}
               </span>{' '}
               · drift{' '}
-              <span className="tabular-nums">
+              <span className="font-data">
                 {health.rating_drift.toFixed(0)}
               </span>{' '}
               from 1500 · {health.players} rated players ·{' '}
@@ -305,14 +303,14 @@ export default function LeaderboardPage() {
             </p>
           )}
           {calibration && calibration.comparisons_evaluated > 0 && (
-            <p className="px-3 pb-3 pt-1 text-xs text-slate-600">
+            <p className="px-3 pb-3 pt-1 text-xs text-faint">
               Prediction quality (walk-forward over{' '}
-              <span className="tabular-nums">
+              <span className="font-data">
                 {calibration.comparisons_evaluated}
               </span>{' '}
               predictions): Brier{' '}
-              <span className="tabular-nums">{calibration.brier}</span> ·{' '}
-              <span className="tabular-nums">
+              <span className="font-data">{calibration.brier}</span> ·{' '}
+              <span className="font-data">
                 {((calibration.accuracy ?? 0) * 100).toFixed(0)}%
               </span>{' '}
               accuracy · {calibrationVerdict(calibration)}
