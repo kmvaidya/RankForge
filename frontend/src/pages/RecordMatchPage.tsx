@@ -11,7 +11,13 @@ import {
   Spinner,
   SuccessNote,
 } from '../components/ui'
-import { createMatch, createPlayer, errorMessage, listPlayers } from '../lib/api'
+import {
+  createMatch,
+  createPlayer,
+  errorMessage,
+  listGames,
+  listPlayers,
+} from '../lib/api'
 import { useFeature } from '../lib/features'
 import { useSelectedGame } from '../lib/GameContext'
 import type { Match, ParticipantCreate } from '../lib/types'
@@ -32,12 +38,30 @@ export default function RecordMatchPage() {
   const [team1, setTeam1] = useState<number[]>(prefill.team1 ?? [])
   const [team2, setTeam2] = useState<number[]>(prefill.team2 ?? [])
   const [winner, setWinner] = useState<Winner>(1)
-  const [score, setScore] = useState('')
+  const [score1, setScore1] = useState('')
+  const [score2, setScore2] = useState('')
   const [notes, setNotes] = useState('')
   const [weight, setWeight] = useState('')
   const weightsEnabled = useFeature('match_weights')
   const weightValue = weight.trim() === '' ? 1 : Number(weight)
   const weightValid = Number.isFinite(weightValue) && weightValue > 0
+
+  // The selected game's quick-entry preset (rating_config.score_preset):
+  // tapping the winner auto-fills scores preset-0 for two-tap recording.
+  const { data: gamesData } = useQuery({ queryKey: ['games'], queryFn: listGames })
+  const selectedGame = gamesData?.items.find((g) => g.id === gameId)
+  const scorePreset = selectedGame?.rating_config?.score_preset
+  const preset = typeof scorePreset === 'number' ? scorePreset : null
+
+  const parseScore = (raw: string): number | null => {
+    if (raw.trim() === '') return null
+    const n = Number(raw)
+    return Number.isFinite(n) && n >= 0 ? n : null
+  }
+  const s1 = parseScore(score1)
+  const s2 = parseScore(score2)
+  const scoresValid =
+    (score1.trim() === '' && score2.trim() === '') || (s1 !== null && s2 !== null)
   const [newPlayerName, setNewPlayerName] = useState('')
   const [result, setResult] = useState<Match | null>(null)
 
@@ -61,7 +85,8 @@ export default function RecordMatchPage() {
       setResult(match)
       setTeam1([])
       setTeam2([])
-      setScore('')
+      setScore1('')
+      setScore2('')
       setNotes('')
       setWeight('')
       queryClient.invalidateQueries({ queryKey: ['leaderboard'] })
@@ -88,7 +113,19 @@ export default function RecordMatchPage() {
     team1.length > 0 &&
     team2.length > 0 &&
     weightValid &&
+    scoresValid &&
     !submit.isPending
+
+  /** Two-tap entry: picking the winner also drafts the score line when the
+   *  game has a preset and nothing has been typed yet. */
+  const pickWinner = (value: Winner) => {
+    setWinner(value)
+    if (preset === null || value === 'draw') return
+    if (score1.trim() === '' && score2.trim() === '') {
+      setScore1(String(value === 1 ? preset : 0))
+      setScore2(String(value === 2 ? preset : 0))
+    }
+  }
 
   const handleSubmit = () => {
     if (!canSubmit) return
@@ -113,7 +150,10 @@ export default function RecordMatchPage() {
     ]
 
     const metadata: Record<string, unknown> = {}
-    if (score.trim()) metadata.final_score = score.trim()
+    if (s1 !== null && s2 !== null) {
+      metadata.team_scores = { '1': s1, '2': s2 }
+      metadata.final_score = `${s1}-${s2}`
+    }
     if (notes.trim()) metadata.notes = notes.trim()
     if (weightsEnabled && weight.trim() && weightValue !== 1)
       metadata.weight = weightValue
@@ -295,7 +335,7 @@ export default function RecordMatchPage() {
               ).map(([value, label]) => (
                 <button
                   key={String(value)}
-                  onClick={() => setWinner(value)}
+                  onClick={() => pickWinner(value)}
                   className={`rounded-lg px-2 py-2 text-xs font-semibold transition-colors ${
                     winner === value
                       ? 'bg-indigo-600 text-white'
@@ -307,15 +347,37 @@ export default function RecordMatchPage() {
               ))}
             </div>
 
-            <label className="mt-4 block text-xs font-medium text-slate-400">
-              Score (optional)
-              <input
-                value={score}
-                onChange={(e) => setScore(e.target.value)}
-                placeholder="e.g. 11-8"
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:border-indigo-500 focus:outline-none"
-              />
-            </label>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {(
+                [
+                  ['Team 1 score', score1, setScore1],
+                  ['Team 2 score', score2, setScore2],
+                ] as const
+              ).map(([label, value, setter]) => (
+                <label
+                  key={label}
+                  className="block text-xs font-medium text-slate-400"
+                >
+                  {label}
+                  <input
+                    value={value}
+                    onChange={(e) => setter(e.target.value)}
+                    inputMode="numeric"
+                    placeholder={preset !== null ? String(preset) : '—'}
+                    className={`mt-1 w-full rounded-lg border bg-slate-900 px-3 py-1.5 text-sm text-slate-100 focus:outline-none ${
+                      scoresValid
+                        ? 'border-slate-700 focus:border-indigo-500'
+                        : 'border-red-700 focus:border-red-500'
+                    }`}
+                  />
+                </label>
+              ))}
+            </div>
+            {!scoresValid && (
+              <p className="mt-1 text-xs text-red-400">
+                Enter both scores as non-negative numbers, or leave both empty.
+              </p>
+            )}
 
             {weightsEnabled && (
               <label className="mt-3 block text-xs font-medium text-slate-400">

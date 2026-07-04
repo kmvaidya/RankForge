@@ -216,6 +216,54 @@ def _match_weight(match: models.Match) -> float:
     return float(raw)
 
 
+def _margin_multiplier(match: models.Match, game: models.Game | None) -> float:
+    """Score-margin weight multiplier from ``rating_config.margin_weight_factor``.
+
+    When a game opts in (factor > 0) and the match carries two-team numeric
+    scores in ``match_metadata.team_scores`` (keys = team ids as strings),
+    the match weight is scaled by::
+
+        1 + factor * |score_a - score_b| / (score_a + score_b)
+
+    A blowout carries up to ``1 + factor`` games of information; a nail-biter
+    stays near 1. Matches without scores, with more than two teams, or with
+    an all-zero total are left at 1.0 — margin is a bonus signal, never a
+    requirement.
+
+    Raises:
+        RatingCalculationError: If the factor is enabled and team_scores is
+            present but malformed (non-numeric or negative scores).
+    """
+    config = (game.rating_config if game else None) or {}
+    raw_factor = config.get("margin_weight_factor", 0.0)
+    if (
+        isinstance(raw_factor, bool)
+        or not isinstance(raw_factor, (int, float))
+        or raw_factor < 0
+    ):
+        raise RatingCalculationError(
+            f"Invalid margin_weight_factor {raw_factor!r} in rating_config: "
+            "must be a non-negative number"
+        )
+    factor = float(raw_factor)
+    scores = (match.match_metadata or {}).get("team_scores")
+    if factor == 0 or not isinstance(scores, dict) or len(scores) != 2:
+        return 1.0
+
+    values = []
+    for value in scores.values():
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            raise RatingCalculationError(
+                f"Invalid team_scores {scores!r} on match {match.id}: "
+                "scores must be non-negative numbers"
+            )
+        values.append(float(value))
+    total = values[0] + values[1]
+    if total == 0:
+        return 1.0
+    return 1 + factor * abs(values[0] - values[1]) / total
+
+
 def _min_swing(game: models.Game | None) -> float:
     """Extract the guaranteed minimum rating swing from ``Game.rating_config``.
 
@@ -360,8 +408,8 @@ async def update_ratings_for_match(db: AsyncSession, match: models.Match) -> Non
     # 2. Calculate a normalized performance score for each player from the match outcome
     # This may raise NonCompetitiveMatchError or RatingCalculationError
     player_scores = _calculate_player_scores(match)
-    weight = _match_weight(match)
     game = await db.get(models.Game, match.game_id)
+    weight = _match_weight(match) * _margin_multiplier(match, game)
     min_swing = _min_swing(game)
     new_ratings: dict[int, Glicko2Rating] = {}
 
