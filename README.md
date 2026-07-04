@@ -1,18 +1,29 @@
 # RankForge
 
+[![CI](https://github.com/kmvaidya/RankForge/actions/workflows/ci.yml/badge.svg)](https://github.com/kmvaidya/RankForge/actions/workflows/ci.yml)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A modern, full-stack rating and matchmaking system designed to handle any competitive game. RankForge provides a flexible architecture for tracking player ratings, match histories, and generating balanced teams for any number of players and team structures.
 
 ## Core Features
 
-- **Game Agnostic:** Unified database schema handles 1v1 win/loss, team-based, and multi-outcome formats
-- **Flexible Rating System:** Pluggable rating algorithms per game (Glicko-2 implemented, Elo-ready)
+- **Game Agnostic:** Unified database schema handles 1v1 win/loss, team-based, multi-team ranked, and free-for-all formats
+- **Flexible Rating System:** Pluggable rating algorithms per game (Glicko-2 implemented), with per-game tuning via `rating_config`: system constant (`tau`), score-margin weighting, minimum rating swing, inactivity RD growth, and season RD resets
+- **Match Prediction & Honest Evaluation:** Win probabilities for any team split from the engine's own expected-score math (`POST /games/{id}/predict`), and a walk-forward calibration report (`GET /games/{id}/calibration`) that scores the ratings against real history — Brier, accuracy, expected calibration error, reliability bins
 - **Balanced Matchmaking:** Novel algorithm using skill-distribution superposition and simulated annealing — see [docs/matchmaking-algorithm.md](docs/matchmaking-algorithm.md)
-- **Match Corrections:** Fix historical matches (wrong winner, players, or date); all subsequent ratings are recalculated automatically with optimistic-locking protection
-- **Web UI:** React + TypeScript single-page app for recording matches, leaderboards, matchmaking, and player profiles with rating history charts
+- **Match Corrections:** Fix historical matches (wrong winner, players, or date); all subsequent ratings — including season boundaries and inactivity growth — are replayed deterministically, with optimistic-locking protection
+- **Seasons:** Boundary timestamps that re-open the ladder (RD reset) while preserving skill, with separate season/career records
+- **Web UI:** React + TypeScript single-page app — leaderboards (with a conservative rating−2·RD view), two-tap match recording with live pre-match odds and upset callouts, matchmaking, live session runner, and player profiles with uncertainty-band rating charts and partner/rival chemistry
+- **Weighted Matches:** Any match can carry more or less rating information (`match_metadata.weight`), optionally scaled further by score margin
+- **Offline Parameter Tuning:** `python -m rankforge.tools.tune` replays a game's real history across a parameter grid and reports Brier/drift per combination
 - **Anonymous Players:** Support for one-time anonymous participants in matches
+- **Feature Flags:** `RANKFORGE_FEATURES` gates deployment-specific UI (match weights, session mode) without forking the generic core
 - **Docker Ready:** Production-ready containerization with PostgreSQL 16 and an nginx-served frontend
 - **Modern Async Stack:** FastAPI + SQLAlchemy 2.0 async with full type hints
-- **Comprehensive Testing:** 215+ tests with pytest-asyncio; CI via GitHub Actions
+- **Comprehensive Testing:** 300+ tests with pytest-asyncio; CI via GitHub Actions
+
+Architecture deep-dive: [docs/architecture.md](docs/architecture.md)
 
 ## Tech Stack
 
@@ -36,7 +47,7 @@ The fastest way to get RankForge running with PostgreSQL.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/RankForge.git
+git clone https://github.com/kmvaidya/RankForge.git
 cd RankForge
 
 # Copy environment file (optional - defaults work out of box)
@@ -64,7 +75,7 @@ For development without Docker, using SQLite.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/RankForge.git
+git clone https://github.com/kmvaidya/RankForge.git
 cd RankForge
 
 # Create virtual environment
@@ -116,6 +127,11 @@ See [frontend/README.md](frontend/README.md) for build and deployment details.
 | `PUT` | `/games/{id}` | Update a game |
 | `DELETE` | `/games/{id}` | Delete a game |
 | `GET` | `/games/{id}/leaderboard` | Get player rankings for a game |
+| `POST` | `/games/{id}/predict` | Win probabilities for a hypothetical team split |
+| `GET` | `/games/{id}/calibration` | Walk-forward prediction-quality report (Brier, accuracy, ECE) |
+| `GET` | `/games/{id}/health` | Rating-inflation monitor (mean rating, drift from 1500) |
+| `GET` | `/games/{id}/seasons` | List season boundaries |
+| `POST` | `/games/{id}/seasons` | Start a new season (RD reset, season stats zeroed) |
 | `POST` | `/games/{id}/recalculate` | Rebuild the game's full rating history and stats |
 
 ### Players
@@ -128,6 +144,7 @@ See [frontend/README.md](frontend/README.md) for build and deployment details.
 | `PUT` | `/players/{id}` | Update a player |
 | `DELETE` | `/players/{id}` | Delete a player |
 | `GET` | `/players/{id}/stats` | Get player statistics across all games |
+| `GET` | `/players/{id}/chemistry` | Partner & head-to-head records (confidence-adjusted rates) |
 | `GET` | `/players/{id}/matches` | Get player match history |
 
 ### Matches
@@ -146,11 +163,12 @@ See [frontend/README.md](frontend/README.md) for build and deployment details.
 |--------|----------|-------------|
 | `POST` | `/matchmaking/generate` | Generate balanced team configurations (fairness-ranked, supports together/apart constraints) |
 
-### Health Check
+### Health Check & Config
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/health` | API health status |
+| `GET` | `/config` | Deployment feature flags for the frontend |
 
 **Full API documentation:** Available at `/docs` (Swagger UI) or `/redoc` when the server is running.
 
@@ -169,6 +187,7 @@ See [frontend/README.md](frontend/README.md) for build and deployment details.
 | `DB_POOL_RECYCLE` | `3600` | Connection recycle time in seconds |
 | `DB_ECHO` | `false` | Enable SQL query logging |
 | `CORS_ORIGINS` | localhost dev origins | Comma-separated origins allowed to call the API |
+| `RANKFORGE_FEATURES` | (empty) | Comma-separated feature flags (`match_weights`, `session_mode`) |
 | `MATCH_UPDATE_MAX_AGE_DAYS` | `0` (unlimited) | Reject corrections to matches older than this |
 | `API_PORT` | `8000` | API port mapping (Docker) |
 | `DB_PORT` | `5432` | PostgreSQL port mapping (Docker) |
@@ -246,11 +265,15 @@ RankForge/
 │       ├── services/             # Business logic
 │       │   ├── match_service.py          # Create/update/delete matches
 │       │   ├── matchmaking_service.py    # Fairness search
+│       │   ├── prediction_service.py     # Win probs + calibration report
 │       │   ├── recalculation_service.py  # Forward rating replay
-│       │   └── stats_service.py          # Win/loss stat upkeep
+│       │   ├── season_service.py         # Season boundaries & RD resets
+│       │   └── stats_service.py          # Win/loss stats + chemistry
+│       ├── tools/                # Offline utilities (rating tuner)
 │       └── main.py               # FastAPI app entry point
-├── frontend/                     # React + TypeScript + Vite SPA
-├── tests/                        # Test suite (215+ tests)
+├── frontend/                     # React + TypeScript + Vite SPA (PWA)
+├── integrations/discord-bot/     # /rank slash-command bot (REST client)
+├── tests/                        # Test suite (300+ tests)
 ├── docs/                         # Algorithm & architecture docs
 ├── .github/workflows/ci.yml     # CI: lint, types, tests, builds
 ├── docker-compose.yml            # Docker services (dev)
