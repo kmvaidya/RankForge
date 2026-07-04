@@ -93,6 +93,12 @@ class TestChemistry:
         assert body["rivals"][0]["player_name"] == "Dee"
         assert body["partners"][0]["player_name"] == "Ben"
 
+        # Empirical-Bayes shrinkage: a perfect 2-0 with Ben must display
+        # below 100%, pulled toward Ana's pooled partner rate (2/3), and a
+        # winless 0-1 with Cid must display above 0%.
+        assert 2 / 3 < partners["Ben"]["shrunk_win_rate"] < 1.0
+        assert 0.0 < partners["Cid"]["shrunk_win_rate"] < 2 / 3
+
     async def test_no_matches_is_empty(self, async_client: AsyncClient):
         game_id, ids = await _setup_game_and_players(async_client, ["Solo"])
         response = await async_client.get(

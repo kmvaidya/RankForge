@@ -33,7 +33,12 @@ class GameStats(BaseModel):
 
 
 class ChemistryEntry(BaseModel):
-    """Aggregated record with (partner) or against (rival) one other player."""
+    """Aggregated record with (partner) or against (rival) one other player.
+
+    ``shrunk_win_rate`` is the empirical-Bayes estimate: the raw rate pulled
+    toward the player's pooled rate in proportion to how few shared matches
+    exist, so a 2-0 pairing doesn't display as a bulletproof 100%.
+    """
 
     player_id: int
     player_name: str
@@ -42,6 +47,7 @@ class ChemistryEntry(BaseModel):
     losses: int = Field(0, ge=0)
     draws: int = Field(0, ge=0)
     win_rate: float = Field(0.0, ge=0.0, le=1.0)
+    shrunk_win_rate: float = Field(0.0, ge=0.0, le=1.0)
 
 
 class PlayerChemistry(BaseModel):

@@ -11,11 +11,12 @@ from sqlalchemy.orm import selectinload
 from rankforge.db.models import Game, GameProfile, Match, Player
 from rankforge.db.session import get_db
 from rankforge.schemas import game as game_schema
+from rankforge.schemas import prediction as prediction_schema
 from rankforge.schemas.common import RatingInfo
 from rankforge.schemas.leaderboard import LeaderboardEntry
 from rankforge.schemas.match import RecalculationResult
 from rankforge.schemas.pagination import GameSortField, PaginatedResponse, SortOrder
-from rankforge.services import recalculation_service, season_service
+from rankforge.services import prediction_service, recalculation_service, season_service
 
 # Creates an APIRouter instance
 # - prefix="/games": All routes defined here will be prefixed with /games
@@ -318,6 +319,51 @@ async def get_game_health(
         mean_rating=round(mean, 2),
         rating_drift=round(abs(1500.0 - mean), 2),
     )
+
+
+@router.post("/{game_id}/predict", response_model=prediction_schema.PredictionResponse)
+async def predict_match(
+    game_id: int,
+    request: prediction_schema.PredictionRequest,
+    db: AsyncSession = Depends(get_db),
+) -> prediction_schema.PredictionResponse:
+    """
+    Predict win probabilities for a hypothetical team split.
+
+    Uses the Glicko-2 expected-score function — the same math the rating
+    updates are built on — so predictions and ratings can never disagree.
+    Players without a profile in this game are treated as fresh.
+
+    Raises:
+        404: If the game or any player doesn't exist
+    """
+    return await prediction_service.predict_teams(db, game_id, request.teams)
+
+
+@router.get(
+    "/{game_id}/calibration", response_model=prediction_schema.CalibrationReport
+)
+async def get_calibration(
+    game_id: int,
+    warmup: int = Query(
+        5,
+        ge=0,
+        le=100,
+        description="Skip pairings involving players with fewer prior appearances",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> prediction_schema.CalibrationReport:
+    """
+    How well this game's ratings predict its real results.
+
+    Replays the full match history with a strict predict-before-update
+    protocol and reports Brier score, accuracy, expected calibration error,
+    and reliability-diagram bins. Read-only.
+
+    Raises:
+        404: If the game doesn't exist
+    """
+    return await prediction_service.walk_forward_calibration(db, game_id, warmup)
 
 
 @router.get("/{game_id}/seasons", response_model=game_schema.SeasonList)

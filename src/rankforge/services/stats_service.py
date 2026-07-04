@@ -57,6 +57,35 @@ def _increment(counters: dict, result: str | None) -> dict:
     return _with_win_rate(counters)
 
 
+def _chemistry_prior(counts: list[dict]) -> tuple[float, float]:
+    """Empirical-Bayes Beta prior (mean, strength) over one bucket's rates.
+
+    Method of moments: the between-pair variance is the observed variance of
+    pair win rates minus the variance expected from small samples alone; the
+    prior strength is the pseudo-match count that variance implies. With too
+    few pairs to estimate variance, falls back to strength 10 — the size of
+    the prior the pickleball study estimated from real league data — and a
+    homogeneous bucket (no excess variance) shrinks hard. Strength is
+    clamped to [4, 50] so no single pairing is ever fully flattened.
+    """
+    sized = [
+        (c["wins"] / c["matches"], c["matches"]) for c in counts if c["matches"] > 0
+    ]
+    if not sized:
+        return 0.5, 10.0
+    total = sum(n for _, n in sized)
+    mean = sum(rate * n for rate, n in sized) / total
+    if len(sized) < 3 or mean <= 0.0 or mean >= 1.0:
+        return mean, 10.0
+    observed = sum(n * (rate - mean) ** 2 for rate, n in sized) / total
+    sampling = len(sized) * mean * (1 - mean) / total
+    between = observed - sampling
+    if between <= 0:
+        return mean, 50.0
+    strength = mean * (1 - mean) / between - 1
+    return mean, min(max(strength, 4.0), 50.0)
+
+
 def apply_match_stats(profile: models.GameProfile, outcome: dict) -> None:
     """Increment a profile's stats counters for one recorded participation.
 
@@ -119,6 +148,7 @@ async def player_chemistry(
                 entry[_RESULT_KEYS[result_kind]] += 1
 
     def to_entries(bucket: dict[int, dict]) -> list[ChemistryEntry]:
+        prior_mean, prior_strength = _chemistry_prior(list(bucket.values()))
         entries = [
             ChemistryEntry(
                 player_id=pid,
@@ -127,6 +157,11 @@ async def player_chemistry(
                     round(counts["wins"] / counts["matches"], 4)
                     if counts["matches"]
                     else 0.0
+                ),
+                shrunk_win_rate=round(
+                    (counts["wins"] + prior_strength * prior_mean)
+                    / (counts["matches"] + prior_strength),
+                    4,
                 ),
                 **counts,
             )
