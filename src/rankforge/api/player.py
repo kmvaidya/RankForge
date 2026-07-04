@@ -10,13 +10,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from rankforge.db.models import GameProfile, Match, MatchParticipant, Player
+from rankforge.db.models import Game, GameProfile, Match, MatchParticipant, Player
 from rankforge.db.session import get_db
 from rankforge.schemas import match as match_schema
 from rankforge.schemas import player as player_schema
 from rankforge.schemas.common import RatingInfo
 from rankforge.schemas.pagination import PaginatedResponse, PlayerSortField, SortOrder
-from rankforge.schemas.player_stats import GameStats, PlayerStats
+from rankforge.schemas.player_stats import GameStats, PlayerChemistry, PlayerStats
+from rankforge.services import stats_service
 
 # Create an APIRouter instance for players
 # - prefix="/players": All routes here will be prefixed with /players
@@ -263,6 +264,33 @@ async def get_player_stats(
         overall_win_rate=total_wins / total_matches if total_matches > 0 else 0.0,
         games_played=game_stats_list,
     )
+
+
+@router.get("/{player_id}/chemistry", response_model=PlayerChemistry)
+async def get_player_chemistry(
+    player_id: int,
+    game_id: int = Query(..., description="Game to aggregate within"),
+    db: AsyncSession = Depends(get_db),
+) -> PlayerChemistry:
+    """
+    Partner and head-to-head records for a player in one game.
+
+    Partners are teammates (win rate = how the duo fares together);
+    rivals are opponents (win rate = this player's record against them).
+    """
+    player = await db.get(Player, player_id)
+    if not player or player.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Player with id {player_id} not found",
+        )
+    game = await db.get(Game, game_id)
+    if not game or game.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Game with id {game_id} not found",
+        )
+    return await stats_service.player_chemistry(db, player_id, game_id)
 
 
 @router.get(

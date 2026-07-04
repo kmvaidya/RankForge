@@ -12,6 +12,7 @@ import type {
   MatchUpdateResponse,
   Paginated,
   Player,
+  PlayerChemistry,
   PlayerStats,
   RatingStrategy,
 } from './types'
@@ -82,6 +83,13 @@ export const createPlayer = async (name: string): Promise<Player> =>
 
 export const getPlayerStats = async (id: number): Promise<PlayerStats> =>
   (await api.get(`/players/${id}/stats`)).data
+
+export const getPlayerChemistry = async (
+  id: number,
+  gameId: number,
+): Promise<PlayerChemistry> =>
+  (await api.get(`/players/${id}/chemistry`, { params: { game_id: gameId } }))
+    .data
 
 export const getPlayerMatches = async (
   id: number,

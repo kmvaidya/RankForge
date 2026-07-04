@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import {
   CartesianGrid,
   Line,
@@ -19,8 +19,61 @@ import {
   RatingDelta,
   Spinner,
 } from '../components/ui'
-import { errorMessage, getPlayerMatches, getPlayerStats } from '../lib/api'
+import {
+  errorMessage,
+  getPlayerChemistry,
+  getPlayerMatches,
+  getPlayerStats,
+} from '../lib/api'
 import { outcomeClass } from '../lib/outcome'
+import type { ChemistryEntry } from '../lib/types'
+
+function ChemistryList({
+  title,
+  entries,
+  emptyHint,
+}: {
+  title: string
+  entries: ChemistryEntry[]
+  emptyHint: string
+}) {
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </h3>
+      {entries.length === 0 && (
+        <p className="text-sm text-slate-600">{emptyHint}</p>
+      )}
+      <ul className="space-y-1.5">
+        {entries.slice(0, 6).map((e) => (
+          <li
+            key={e.player_id}
+            className="flex items-center justify-between gap-2 text-sm"
+          >
+            <Link
+              to={`/players/${e.player_id}`}
+              className="truncate font-medium text-indigo-300 hover:text-indigo-200 hover:underline"
+            >
+              {e.player_name}
+            </Link>
+            <span className="shrink-0 tabular-nums text-slate-400">
+              {e.wins}–{e.losses}
+              {e.draws > 0 && `–${e.draws}`}{' '}
+              <span
+                className={
+                  e.win_rate >= 0.5 ? 'text-emerald-400' : 'text-red-400'
+                }
+              >
+                {(e.win_rate * 100).toFixed(0)}%
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 export default function PlayerProfilePage() {
   const { playerId } = useParams()
@@ -51,6 +104,12 @@ export default function PlayerProfilePage() {
         limit: 100,
         sort_order: 'desc',
       }),
+    enabled: Number.isFinite(id) && activeGameId !== null,
+  })
+
+  const chemistry = useQuery({
+    queryKey: ['chemistry', id, activeGameId],
+    queryFn: () => getPlayerChemistry(id, activeGameId!),
     enabled: Number.isFinite(id) && activeGameId !== null,
   })
 
@@ -260,6 +319,33 @@ export default function PlayerProfilePage() {
               </ul>
             </Card>
           </div>
+
+          {chemistry.data &&
+            (chemistry.data.partners.length > 0 ||
+              chemistry.data.rivals.length > 0) && (
+              <Card className="mt-6 p-4">
+                <h2 className="mb-3 text-sm font-semibold text-slate-300">
+                  Partners &amp; head-to-head
+                  {activeGame && (
+                    <span className="ml-2 font-normal text-slate-500">
+                      {activeGame.game.name}
+                    </span>
+                  )}
+                </h2>
+                <div className="grid gap-6 sm:grid-cols-2">
+                  <ChemistryList
+                    title="Best partners (record together)"
+                    entries={chemistry.data.partners}
+                    emptyHint="No team matches yet."
+                  />
+                  <ChemistryList
+                    title="Head-to-head (record against)"
+                    entries={chemistry.data.rivals}
+                    emptyHint="No opponents yet."
+                  />
+                </div>
+              </Card>
+            )}
         </>
       )}
     </div>

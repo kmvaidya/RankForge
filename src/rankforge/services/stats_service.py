@@ -10,11 +10,14 @@ stats — they own rating_info only.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from rankforge.db import models
+from rankforge.schemas.player_stats import ChemistryEntry, PlayerChemistry
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,78 @@ def apply_match_stats(profile: models.GameProfile, outcome: dict) -> None:
         key = _RESULT_KEYS[result]
         stats[key] = stats.get(key, 0) + 1
     profile.stats = _with_win_rate(stats)
+
+
+async def player_chemistry(
+    db: AsyncSession, player_id: int, game_id: int
+) -> PlayerChemistry:
+    """Partner and head-to-head aggregates for a player in one game.
+
+    For every non-deleted match the player took part in, teammates land in
+    ``partners`` and opponents in ``rivals``; both count the *player's*
+    result (so a partner's win_rate reads "how we fare together" and a
+    rival's reads "my record against them"). Anonymous and soft-deleted
+    players are skipped. Sorted by shared matches, then win rate.
+    """
+    result = await db.execute(
+        select(models.MatchParticipant)
+        .join(models.Match, models.MatchParticipant.match_id == models.Match.id)
+        .where(
+            models.Match.game_id == game_id,
+            models.Match.deleted_at.is_(None),
+        )
+        .options(selectinload(models.MatchParticipant.player))
+    )
+    by_match: dict[int, list[models.MatchParticipant]] = defaultdict(list)
+    for participant in result.scalars():
+        by_match[participant.match_id].append(participant)
+
+    partners: dict[int, dict] = {}
+    rivals: dict[int, dict] = {}
+    names: dict[int, str] = {}
+
+    for participants in by_match.values():
+        me = next((p for p in participants if p.player_id == player_id), None)
+        if me is None:
+            continue
+        result_kind = outcome_result(me.outcome)
+        for other in participants:
+            if other.player_id == player_id:
+                continue
+            if other.player.is_anonymous or other.player.deleted_at is not None:
+                continue
+            names[other.player_id] = other.player.name
+            bucket = partners if other.team_id == me.team_id else rivals
+            entry = bucket.setdefault(
+                other.player_id, {"matches": 0, "wins": 0, "losses": 0, "draws": 0}
+            )
+            entry["matches"] += 1
+            if result_kind is not None:
+                entry[_RESULT_KEYS[result_kind]] += 1
+
+    def to_entries(bucket: dict[int, dict]) -> list[ChemistryEntry]:
+        entries = [
+            ChemistryEntry(
+                player_id=pid,
+                player_name=names[pid],
+                win_rate=(
+                    round(counts["wins"] / counts["matches"], 4)
+                    if counts["matches"]
+                    else 0.0
+                ),
+                **counts,
+            )
+            for pid, counts in bucket.items()
+        ]
+        entries.sort(key=lambda e: (-e.matches, -e.win_rate, e.player_name))
+        return entries
+
+    return PlayerChemistry(
+        player_id=player_id,
+        game_id=game_id,
+        partners=to_entries(partners),
+        rivals=to_entries(rivals),
+    )
 
 
 async def rebuild_stats(

@@ -32,6 +32,33 @@ class GameStats(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ChemistryEntry(BaseModel):
+    """Aggregated record with (partner) or against (rival) one other player."""
+
+    player_id: int
+    player_name: str
+    matches: int = Field(0, ge=0)
+    wins: int = Field(0, ge=0)
+    losses: int = Field(0, ge=0)
+    draws: int = Field(0, ge=0)
+    win_rate: float = Field(0.0, ge=0.0, le=1.0)
+
+
+class PlayerChemistry(BaseModel):
+    """Partner and head-to-head records for one player in one game.
+
+    ``partners`` aggregates matches where the other player shared the
+    player's team (win rate = how the duo fares together); ``rivals``
+    aggregates matches on opposing teams (win rate = the player's record
+    against that opponent).
+    """
+
+    player_id: int
+    game_id: int
+    partners: list[ChemistryEntry] = Field(default_factory=list)
+    rivals: list[ChemistryEntry] = Field(default_factory=list)
+
+
 class PlayerStats(BaseModel):
     """Aggregate statistics for a player across all games.
 

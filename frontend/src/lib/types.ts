@@ -151,6 +151,23 @@ export interface MatchUpdateResponse {
   recalculation: RecalculationResult | null
 }
 
+export interface ChemistryEntry {
+  player_id: number
+  player_name: string
+  matches: number
+  wins: number
+  losses: number
+  draws: number
+  win_rate: number
+}
+
+export interface PlayerChemistry {
+  player_id: number
+  game_id: number
+  partners: ChemistryEntry[]
+  rivals: ChemistryEntry[]
+}
+
 /** Runtime deployment config from GET /config (feature flags etc.). */
 export interface AppConfig {
   features: string[]
