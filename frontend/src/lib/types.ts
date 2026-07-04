@@ -151,6 +151,18 @@ export interface MatchUpdateResponse {
   recalculation: RecalculationResult | null
 }
 
+export interface Season {
+  id: number
+  game_id: number
+  number: number
+  started_at: string
+}
+
+export interface SeasonList {
+  current_season: number
+  items: Season[]
+}
+
 export interface ChemistryEntry {
   player_id: number
   player_name: string

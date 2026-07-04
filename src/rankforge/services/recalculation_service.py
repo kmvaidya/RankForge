@@ -37,7 +37,7 @@ from rankforge.db import models
 from rankforge.db.models import DEFAULT_RATING_INFO
 from rankforge.exceptions import GameNotFoundError
 from rankforge.rating import get_rating_engine
-from rankforge.services import stats_service
+from rankforge.services import season_service, stats_service
 
 logger = logging.getLogger(__name__)
 
@@ -182,13 +182,45 @@ async def replay_matches(
         db.add(profiles[player_id])
     await db.flush()
 
-    # 2. Replay the window in order.
+    # Season boundaries inside the window must replay at the same
+    # chronological points they originally applied (RD reset for the
+    # affected profiles; boundaries before the window are already baked
+    # into the reset targets).
+    season_rows = await db.execute(
+        select(models.Season)
+        .where(
+            models.Season.game_id == game_id,
+            models.Season.started_at >= from_played_at,
+        )
+        .order_by(models.Season.started_at)
+    )
+    boundaries = list(season_rows.scalars().all())
+    rd_reset = season_service.season_rd_reset(game)
+    boundary_index = 0
+
+    def apply_boundaries_up_to(played_at: datetime) -> None:
+        nonlocal boundary_index
+        while (
+            boundary_index < len(boundaries)
+            and boundaries[boundary_index].started_at <= played_at
+        ):
+            season_service.apply_season_reset(list(profiles.values()), rd_reset)
+            for profile in profiles.values():
+                db.add(profile)
+            boundary_index += 1
+
+    # 2. Replay the window in order, interleaving season boundaries.
     for match in window:
+        apply_boundaries_up_to(normalize_played_at(match.played_at))
         for participant in match.participants:
             profile = profiles[participant.player_id]
             participant.rating_info_before = dict(profile.rating_info)
             db.add(participant)
         await engine_fn(db, match)
+
+    # Boundaries after the last window match still apply (their RD reset
+    # is current state).
+    apply_boundaries_up_to(datetime.max)
 
     await db.flush()
 

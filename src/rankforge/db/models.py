@@ -210,6 +210,33 @@ class GameProfile(Base, TimestampMixin, VersionMixin, SoftDeleteMixin):
         return result.scalar_one_or_none()
 
 
+class Season(Base, TimestampMixin):
+    """A season boundary for one game.
+
+    Season 1 is implicit (the start of history); each row marks the start of
+    a later season. Creating one resets every profile's RD (skill persists,
+    certainty does not — the ladder re-opens) and zeroes the per-season
+    stats. Boundaries are timestamps so the recalculation cascade can replay
+    them deterministically between matches.
+    """
+
+    __tablename__ = "seasons"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game_id: Mapped[int] = mapped_column(
+        ForeignKey("games.id"), nullable=False, index=True
+    )
+    number: Mapped[int] = mapped_column(nullable=False)
+    started_at: Mapped[datetime] = mapped_column(default=utcnow_naive, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("game_id", "number", name="_game_season_number_uc"),
+    )
+
+    def __init__(self, **kw: Any):
+        super().__init__(**kw)
+
+
 # ===============================================
 # Match and Results Tables
 # ===============================================

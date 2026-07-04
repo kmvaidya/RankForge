@@ -2,6 +2,7 @@
 
 """Pydantic schemas for the Game resource."""
 
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -27,6 +28,9 @@ def validate_rating_config(config: dict[str, Any]) -> dict[str, Any]:
         margin_weight_factor: number >= 0 — scales match weight by score margin
         score_preset: int >= 1 — typical winning score, used by quick entry UI
         leaderboard_mode: "rating" | "conservative"
+        tau: number in (0, 3] — Glicko-2 system constant (default 0.5)
+        season_rd_reset: number in [30, 500] — RD applied at season
+            boundaries (default 350)
     """
     for key in ("min_swing", "margin_weight_factor"):
         if key in config:
@@ -52,6 +56,14 @@ def validate_rating_config(config: dict[str, Any]) -> dict[str, Any]:
     if "leaderboard_mode" in config:
         if config["leaderboard_mode"] not in ("rating", "conservative"):
             raise ValueError("leaderboard_mode must be 'rating' or 'conservative'")
+    if "season_rd_reset" in config:
+        value = config["season_rd_reset"]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not (30 <= value <= 500)
+        ):
+            raise ValueError("season_rd_reset must be a number in [30, 500]")
     return config
 
 
@@ -109,6 +121,31 @@ class GameRead(GameBase):
     # This config allows Pydantic to read data from ORM models.
     # It tells Pydantic to access fields like `game.id` instead of `game['id']`.
     model_config = ConfigDict(from_attributes=True)
+
+
+# ===============================================
+# Season Schemas
+# ===============================================
+class SeasonRead(BaseModel):
+    """A season boundary."""
+
+    id: int
+    game_id: int
+    number: int
+    started_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SeasonList(BaseModel):
+    """A game's season boundaries plus its current season number.
+
+    Season 1 is implicit (no row); ``current_season`` is 1 until the first
+    boundary is created.
+    """
+
+    current_season: int
+    items: list[SeasonRead]
 
 
 # ===============================================

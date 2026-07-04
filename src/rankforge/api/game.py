@@ -15,7 +15,7 @@ from rankforge.schemas.common import RatingInfo
 from rankforge.schemas.leaderboard import LeaderboardEntry
 from rankforge.schemas.match import RecalculationResult
 from rankforge.schemas.pagination import GameSortField, PaginatedResponse, SortOrder
-from rankforge.services import recalculation_service
+from rankforge.services import recalculation_service, season_service
 
 # Creates an APIRouter instance
 # - prefix="/games": All routes defined here will be prefixed with /games
@@ -317,6 +317,50 @@ async def get_game_health(
         matches=matches,
         mean_rating=round(mean, 2),
         rating_drift=round(abs(1500.0 - mean), 2),
+    )
+
+
+@router.get("/{game_id}/seasons", response_model=game_schema.SeasonList)
+async def get_seasons(
+    game_id: int, db: AsyncSession = Depends(get_db)
+) -> game_schema.SeasonList:
+    """
+    A game's season boundaries. Season 1 is implicit; the current season is
+    1 until the first boundary is created.
+    """
+    game = await db.get(Game, game_id)
+    if not game or game.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Game with id {game_id} not found",
+        )
+    seasons = await season_service.list_seasons(db, game_id)
+    current = await season_service.current_season_number(db, game_id)
+    return game_schema.SeasonList(
+        current_season=current,
+        items=[game_schema.SeasonRead.model_validate(s) for s in seasons],
+    )
+
+
+@router.post(
+    "/{game_id}/seasons",
+    response_model=game_schema.SeasonRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def start_season(
+    game_id: int, db: AsyncSession = Depends(get_db)
+) -> game_schema.SeasonRead:
+    """
+    Start a new season: every profile's RD resets to
+    rating_config.season_rd_reset (default 350) so the ladder re-opens,
+    ratings and volatility persist, and per-season stats zero out.
+    """
+    season = await season_service.start_season(db, game_id)
+    return game_schema.SeasonRead(
+        id=season.id,
+        game_id=season.game_id,
+        number=season.number,
+        started_at=season.started_at,
     )
 
 

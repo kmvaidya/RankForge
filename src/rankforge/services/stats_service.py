@@ -46,15 +46,29 @@ def _with_win_rate(stats: dict) -> dict:
     return stats
 
 
-def apply_match_stats(profile: models.GameProfile, outcome: dict) -> None:
-    """Increment a profile's stats counters for one recorded participation."""
-    stats = dict(profile.stats or {})
-    stats["matches_played"] = stats.get("matches_played", 0) + 1
-    result = outcome_result(outcome)
+def _increment(counters: dict, result: str | None) -> dict:
+    counters["matches_played"] = counters.get("matches_played", 0) + 1
+    # Materialize all three counters so incremental updates and full
+    # rebuilds produce identical dict shapes.
+    for key in _RESULT_KEYS.values():
+        counters.setdefault(key, 0)
     if result is not None:
-        key = _RESULT_KEYS[result]
-        stats[key] = stats.get(key, 0) + 1
-    profile.stats = _with_win_rate(stats)
+        counters[_RESULT_KEYS[result]] += 1
+    return _with_win_rate(counters)
+
+
+def apply_match_stats(profile: models.GameProfile, outcome: dict) -> None:
+    """Increment a profile's stats counters for one recorded participation.
+
+    Maintains career counters (top level) and the current-season counters
+    (``stats["season"]``, zeroed at each season boundary; equal to career
+    inside season 1).
+    """
+    stats = dict(profile.stats or {})
+    result = outcome_result(outcome)
+    stats = _increment(stats, result)
+    stats["season"] = _increment(dict(stats.get("season") or {}), result)
+    profile.stats = stats
 
 
 async def player_chemistry(
@@ -138,12 +152,19 @@ async def rebuild_stats(
     correction cascade, where increments would drift. Flushes but does not
     commit.
     """
+    # Local import: season_service imports models only, but keep the stats
+    # module import-light at module scope to avoid cycles.
+    from rankforge.services import season_service
+
     ids = list(player_ids)
     if not ids:
         return
 
+    boundary = await season_service.latest_boundary(db, game_id)
+    season_start = boundary.started_at if boundary else None
+
     result = await db.execute(
-        select(models.MatchParticipant)
+        select(models.MatchParticipant, models.Match.played_at)
         .join(models.Match, models.MatchParticipant.match_id == models.Match.id)
         .where(
             models.Match.game_id == game_id,
@@ -152,15 +173,20 @@ async def rebuild_stats(
         )
     )
 
-    counters: dict[int, dict] = {
-        pid: {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0} for pid in ids
-    }
-    for participant in result.scalars():
-        stats = counters[participant.player_id]
-        stats["matches_played"] += 1
+    def fresh() -> dict:
+        return {"matches_played": 0, "wins": 0, "losses": 0, "draws": 0}
+
+    career: dict[int, dict] = {pid: fresh() for pid in ids}
+    season: dict[int, dict] = {pid: fresh() for pid in ids}
+    for participant, played_at in result.all():
         result_kind = outcome_result(participant.outcome)
-        if result_kind is not None:
-            stats[_RESULT_KEYS[result_kind]] += 1
+        buckets = [career[participant.player_id]]
+        if season_start is None or played_at >= season_start:
+            buckets.append(season[participant.player_id])
+        for stats in buckets:
+            stats["matches_played"] += 1
+            if result_kind is not None:
+                stats[_RESULT_KEYS[result_kind]] += 1
 
     profile_result = await db.execute(
         select(models.GameProfile).where(
@@ -170,7 +196,7 @@ async def rebuild_stats(
     )
     profiles = {p.player_id: p for p in profile_result.scalars()}
 
-    for player_id, stats in counters.items():
+    for player_id, stats in career.items():
         profile = profiles.get(player_id)
         if profile is None:
             continue
@@ -178,6 +204,7 @@ async def rebuild_stats(
         # keys (e.g. imported metrics) that a rebuild must not destroy.
         merged = dict(profile.stats or {})
         merged.update(stats)
+        merged["season"] = _with_win_rate(season[player_id])
         profile.stats = _with_win_rate(merged)
         db.add(profile)
 

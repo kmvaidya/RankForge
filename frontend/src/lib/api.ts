@@ -15,6 +15,8 @@ import type {
   PlayerChemistry,
   PlayerStats,
   RatingStrategy,
+  Season,
+  SeasonList,
 } from './types'
 
 // In dev, Vite proxies /api -> http://localhost:8000. In production set
@@ -72,6 +74,12 @@ export const getLeaderboard = async (
 
 export const getGameHealth = async (gameId: number): Promise<GameHealth> =>
   (await api.get(`/games/${gameId}/health`)).data
+
+export const getSeasons = async (gameId: number): Promise<SeasonList> =>
+  (await api.get(`/games/${gameId}/seasons`)).data
+
+export const startSeason = async (gameId: number): Promise<Season> =>
+  (await api.post(`/games/${gameId}/seasons`)).data
 
 // --- Players ---
 

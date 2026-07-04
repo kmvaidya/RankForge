@@ -9,8 +9,71 @@ import {
   Spinner,
   SuccessNote,
 } from '../components/ui'
-import { createGame, deleteGame, errorMessage, listGames } from '../lib/api'
+import {
+  createGame,
+  deleteGame,
+  errorMessage,
+  getSeasons,
+  listGames,
+  startSeason,
+} from '../lib/api'
 import type { RatingStrategy } from '../lib/types'
+
+/** Current-season badge + guarded "new season" action for one game. */
+function SeasonControls({ gameId }: { gameId: number }) {
+  const queryClient = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
+
+  const { data } = useQuery({
+    queryKey: ['seasons', gameId],
+    queryFn: () => getSeasons(gameId),
+  })
+
+  const start = useMutation({
+    mutationFn: () => startSeason(gameId),
+    onSuccess: () => {
+      setConfirming(false)
+      queryClient.invalidateQueries({ queryKey: ['seasons', gameId] })
+      queryClient.invalidateQueries({ queryKey: ['leaderboard'] })
+    },
+  })
+
+  if (!data) return null
+  return (
+    <span className="mr-3 inline-flex items-center gap-2 text-xs">
+      <span className="rounded bg-slate-800 px-1.5 py-0.5 font-medium text-slate-400">
+        Season {data.current_season}
+      </span>
+      {confirming ? (
+        <>
+          <span className="text-amber-400">
+            Reset everyone's RD and re-open the ladder?
+          </span>
+          <button
+            onClick={() => start.mutate()}
+            disabled={start.isPending}
+            className="rounded-lg bg-amber-700 px-2 py-1 font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+          >
+            {start.isPending ? 'Starting…' : 'Start season'}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            className="rounded-lg bg-slate-800 px-2 py-1 font-medium hover:bg-slate-700"
+          >
+            Cancel
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          className="rounded-lg bg-slate-800 px-2 py-1 font-medium text-slate-400 hover:bg-slate-700"
+        >
+          New season
+        </button>
+      )}
+    </span>
+  )
+}
 
 export default function GamesPage() {
   const queryClient = useQueryClient()
@@ -78,32 +141,37 @@ export default function GamesPage() {
                     </span>
                   </p>
                 </div>
-                {confirmDeleteId === game.id ? (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-red-400">
-                      Delete "{game.name}" and all its ratings?
-                    </span>
+                <div className="flex flex-wrap items-center justify-end gap-y-2">
+                  {confirmDeleteId !== game.id && (
+                    <SeasonControls gameId={game.id} />
+                  )}
+                  {confirmDeleteId === game.id ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-red-400">
+                        Delete "{game.name}" and all its ratings?
+                      </span>
+                      <button
+                        onClick={() => remove.mutate(game.id)}
+                        className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-600"
+                      >
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium hover:bg-slate-700"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
                     <button
-                      onClick={() => remove.mutate(game.id)}
-                      className="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-600"
+                      onClick={() => setConfirmDeleteId(game.id)}
+                      className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-red-950 hover:text-red-300"
                     >
                       Delete
                     </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium hover:bg-slate-700"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setConfirmDeleteId(game.id)}
-                    className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-red-950 hover:text-red-300"
-                  >
-                    Delete
-                  </button>
-                )}
+                  )}
+                </div>
               </Card>
             ))}
           </div>
