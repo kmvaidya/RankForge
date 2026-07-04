@@ -9,6 +9,7 @@ import {
   ErrorNote,
   FairnessMeter,
   PageHeader,
+  Pill,
   Spinner,
 } from '../components/ui'
 import { errorMessage, generateTeams, listPlayers } from '../lib/api'
@@ -235,6 +236,7 @@ export default function MatchmakingPage() {
                         Option {index + 1}
                       </span>
                       <FairnessMeter value={config.fairness} />
+                      {config.lopsided && <Pill tone="warn">lopsided</Pill>}
                     </div>
                     {/* Record Match supports two teams; hide the shortcut
                         for 3+ team configurations rather than silently

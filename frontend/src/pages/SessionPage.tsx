@@ -7,6 +7,7 @@ import {
   EmptyState,
   ErrorNote,
   PageHeader,
+  Pill,
   Spinner,
 } from '../components/ui'
 import {
@@ -22,6 +23,8 @@ interface CourtState {
   /** Two teams of player ids, or null when the court is idle. */
   teams: [number[], number[]] | null
   winProbabilities: number[] | null
+  /** Worst matchup beyond 80/20 — flag it to the group. */
+  lopsided?: boolean
 }
 
 interface SessionState {
@@ -34,6 +37,8 @@ interface SessionState {
   gamesPlayed: Record<number, number>
   record: Record<number, { w: number; l: number }>
   matchesRecorded: number
+  /** Teammate groups already used tonight — matchmaking avoids repeats. */
+  pairings?: number[][]
 }
 
 const STORAGE_KEY = 'rankforge.session.v1'
@@ -113,6 +118,8 @@ export default function SessionPage() {
         player_ids: pool,
         team_count: 2,
         num_results: shuffle ? 5 : 1,
+        // Tonight's previous pairings rank lower, so partners rotate.
+        recent_pairings: (session.pairings ?? []).slice(-16),
       })
       const configs = response.configurations
       if (configs.length === 0) throw new Error('No team configuration found')
@@ -132,7 +139,11 @@ export default function SessionPage() {
                 : s.bench.filter((id) => !pool.includes(id)),
               courts: s.courts.map((c, i) =>
                 i === index
-                  ? { teams, winProbabilities: pick.win_probabilities }
+                  ? {
+                      teams,
+                      winProbabilities: pick.win_probabilities,
+                      lopsided: pick.lopsided ?? false,
+                    }
                   : c,
               ),
             },
@@ -200,6 +211,7 @@ export default function SessionPage() {
           gamesPlayed,
           record: rec,
           matchesRecorded: s.matchesRecorded + 1,
+          pairings: [...(s.pairings ?? []), team1, team2].slice(-24),
         }
       })
       queryClient.invalidateQueries({ queryKey: ['leaderboard'] })
@@ -392,8 +404,11 @@ export default function SessionPage() {
           {session.courts.map((court, index) => (
             <Card key={index} className="p-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-300">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-300">
                   Court {index + 1}
+                  {court.teams && court.lopsided && (
+                    <Pill tone="warn">lopsided</Pill>
+                  )}
                 </h3>
                 {court.teams && (
                   <button

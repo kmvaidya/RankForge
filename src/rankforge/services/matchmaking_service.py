@@ -59,6 +59,15 @@ ANNEALING_CONFIG = {
     "restarts": 4,
 }
 
+# A configuration whose worst matchup gives one side >80% is flagged
+# lopsided (fairness = 1 - |2p - 1| < 0.4): playable, but no fun.
+LOPSIDED_FAIRNESS = 0.4
+
+# Ranking penalty per teammate pair that already played together recently
+# (session variety). Deliberately smaller than meaningful fairness gaps:
+# variety breaks ties, it never forces a genuinely unbalanced match.
+REPEAT_PARTNER_PENALTY = 0.1
+
 
 # =============================================================================
 # Pure math: distributions and fairness
@@ -248,24 +257,55 @@ def _swap_players(
 # =============================================================================
 
 
-class _TopConfigurations:
-    """Keeps the N best distinct configurations by fairness.
+def _repeat_pairs(recent_pairings: list[list[int]] | None) -> set[frozenset[int]]:
+    """Teammate pairs seen in recent matches, for the variety penalty."""
+    pairs: set[frozenset[int]] = set()
+    for group in recent_pairings or []:
+        for a, b in itertools.combinations(set(group), 2):
+            pairs.add(frozenset((a, b)))
+    return pairs
 
-    Fairness is a pure function of the canonical config, so the first offer
-    per key is authoritative; the dict is bounded by the search budget
-    (EXHAUSTIVE_LIMIT / accepted annealing moves), so no pruning is needed.
+
+def _variety_penalty(
+    config: tuple[tuple[int, ...], ...], repeat_pairs: set[frozenset[int]]
+) -> float:
+    """Ranking penalty for re-forming recently seen partnerships."""
+    if not repeat_pairs:
+        return 0.0
+    repeats = sum(
+        1
+        for team in config
+        for a, b in itertools.combinations(team, 2)
+        if frozenset((a, b)) in repeat_pairs
+    )
+    return REPEAT_PARTNER_PENALTY * repeats
+
+
+class _TopConfigurations:
+    """Keeps the N best distinct configurations by ranking score.
+
+    Score (fairness minus variety penalty) is a pure function of the
+    canonical config, so the first offer per key is authoritative; the dict
+    is bounded by the search budget (EXHAUSTIVE_LIMIT / accepted annealing
+    moves), so no pruning is needed. ``best()`` returns (fairness, config) —
+    the score only orders the list.
     """
 
     def __init__(self, limit: int) -> None:
         self._limit = limit
-        self._by_key: dict[tuple, tuple[float, tuple[tuple[int, ...], ...]]] = {}
+        self._by_key: dict[tuple, tuple[float, float, tuple[tuple[int, ...], ...]]] = {}
 
-    def offer(self, config: tuple[tuple[int, ...], ...], fairness: float) -> None:
-        self._by_key.setdefault(_canonical(config), (fairness, config))
+    def offer(
+        self,
+        config: tuple[tuple[int, ...], ...],
+        score: float,
+        fairness: float,
+    ) -> None:
+        self._by_key.setdefault(_canonical(config), (score, fairness, config))
 
     def best(self) -> list[tuple[float, tuple[tuple[int, ...], ...]]]:
-        ranked = sorted(self._by_key.values(), key=lambda fc: -fc[0])
-        return ranked[: self._limit]
+        ranked = sorted(self._by_key.values(), key=lambda sfc: -sfc[0])
+        return [(fairness, config) for _, fairness, config in ranked[: self._limit]]
 
 
 # =============================================================================
@@ -281,18 +321,26 @@ def search_configurations(
     together: list[set[int]],
     apart: list[set[int]],
     seed: int | None = None,
+    repeat_pairs: set[frozenset[int]] | None = None,
 ) -> tuple[list[tuple[float, tuple[tuple[int, ...], ...]]], str, int]:
     """Find the most balanced configurations.
 
     Returns (ranked [(fairness, config)], method, configurations_evaluated).
-    Raises InfeasibleConstraintsError if no valid configuration exists (or
-    none was found within the annealing budget).
+    Ranking maximizes fairness minus a small variety penalty for re-forming
+    ``repeat_pairs`` partnerships; the returned fairness is always the pure
+    balance number. Raises InfeasibleConstraintsError if no valid
+    configuration exists (or none was found within the annealing budget).
     """
+    pairs = repeat_pairs or set()
 
     def fairness_of(config: tuple[tuple[int, ...], ...]) -> float:
         return configuration_fairness(
             [[skills[pid] for pid in team] for team in config]
         )
+
+    def scored(config: tuple[tuple[int, ...], ...]) -> tuple[float, float]:
+        fairness = fairness_of(config)
+        return fairness - _variety_penalty(config, pairs), fairness
 
     top = _TopConfigurations(num_results)
     evaluated = 0
@@ -301,7 +349,8 @@ def search_configurations(
         for config in _enumerate_partitions(player_ids, sizes):
             if not _satisfies_constraints(config, together, apart):
                 continue
-            top.offer(config, fairness_of(config))
+            score, fairness = scored(config)
+            top.offer(config, score, fairness)
             evaluated += 1
         ranked = top.best()
         if not ranked:
@@ -310,15 +359,16 @@ def search_configurations(
             )
         return ranked, "exhaustive", evaluated
 
-    # Simulated annealing with restarts
+    # Simulated annealing with restarts (optimizes the ranked score, so the
+    # variety penalty steers the walk just like fairness does)
     rng = random.Random(seed)
     cfg = ANNEALING_CONFIG
     for _ in range(int(cfg["restarts"])):
         current = _random_valid_configuration(rng, player_ids, sizes, together, apart)
         if current is None:
             continue
-        current_fairness = fairness_of(current)
-        top.offer(current, current_fairness)
+        current_score, current_fairness = scored(current)
+        top.offer(current, current_score, current_fairness)
         evaluated += 1
 
         temperature = float(cfg["t_max"])
@@ -327,12 +377,16 @@ def search_configurations(
                 candidate = _swap_players(rng, current)
                 if not _satisfies_constraints(candidate, together, apart):
                     continue
-                candidate_fairness = fairness_of(candidate)
+                candidate_score, candidate_fairness = scored(candidate)
                 evaluated += 1
-                delta = candidate_fairness - current_fairness
+                delta = candidate_score - current_score
                 if delta >= 0 or rng.random() < math.exp(delta / temperature):
-                    current, current_fairness = candidate, candidate_fairness
-                    top.offer(current, current_fairness)
+                    current = candidate
+                    current_score, current_fairness = (
+                        candidate_score,
+                        candidate_fairness,
+                    )
+                    top.offer(current, current_score, current_fairness)
             temperature *= float(cfg["cooling_rate"])
 
     ranked = top.best()
@@ -454,6 +508,7 @@ async def generate_configurations(
         together,
         apart,
         seed=request.seed,
+        repeat_pairs=_repeat_pairs(request.recent_pairings),
     )
 
     logger.info(
@@ -500,6 +555,7 @@ async def generate_configurations(
                 ],
                 fairness=round(fairness, 4),
                 win_probabilities=win_probs,
+                lopsided=fairness < LOPSIDED_FAIRNESS,
             )
         )
 

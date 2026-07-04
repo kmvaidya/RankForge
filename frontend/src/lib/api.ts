@@ -154,5 +154,6 @@ export const generateTeams = async (body: {
   team_count?: number
   num_results?: number
   constraints?: MatchmakingConstraints
+  recent_pairings?: number[][]
 }): Promise<MatchmakingResponse> =>
   (await api.post('/matchmaking/generate', body)).data

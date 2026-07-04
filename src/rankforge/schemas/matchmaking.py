@@ -37,6 +37,15 @@ class MatchmakingRequest(BaseModel):
         default=None,
         description="Random seed for reproducible results (annealing only)",
     )
+    recent_pairings: list[list[int]] | None = Field(
+        default=None,
+        description=(
+            "Teammate groups from recent matches (e.g. this session's teams). "
+            "Configurations that re-form these partnerships rank slightly "
+            "lower, keeping session nights varied without sacrificing "
+            "genuinely fairer matchups."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_request(self) -> "MatchmakingRequest":
@@ -88,6 +97,13 @@ class TeamConfiguration(BaseModel):
         description=(
             "Per-team probability of outrating every other team "
             "(pairwise product approximation)"
+        ),
+    )
+    lopsided: bool = Field(
+        default=False,
+        description=(
+            "True when the worst matchup gives one side more than 80% "
+            "(fairness below 0.4) — playable, but flag it to the group"
         ),
     )
 

@@ -113,6 +113,8 @@ export interface TeamConfiguration {
   team_ratings: TeamRating[]
   fairness: number
   win_probabilities: number[]
+  /** Worst matchup gives one side >80% — playable, but warn the group. */
+  lopsided?: boolean
 }
 
 export interface MatchmakingResponse {
