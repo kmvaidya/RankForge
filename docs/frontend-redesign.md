@@ -225,7 +225,7 @@ Each phase: implement → `npm run build` + oxlint green → commit → next.
   (no page restructures yet). (`feat`)
 - [x] **P2 — Record match v2**: N teams, FFA, finishing-order entry,
   per-team scores, backdating, N-team odds. (`feat`)
-- [ ] **P3 — Session v2**: formats, station nouns, draws, FFA ranking,
+- [x] **P3 — Session v2**: formats, station nouns, draws, FFA ranking,
   restyle. (`feat`)
 - [ ] **P4 — Leaderboard + Matches redesign.** (`feat`)
 - [ ] **P5 — Profile + Games + Matchmaking polish**, N-team send-to-record.
