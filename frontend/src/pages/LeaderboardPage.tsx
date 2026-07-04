@@ -3,15 +3,37 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import GamePicker from '../components/GamePicker'
-import { Card, EmptyState, ErrorNote, PageHeader, Spinner } from '../components/ui'
+import {
+  Avatar,
+  Card,
+  ConfidenceBar,
+  EmptyState,
+  ErrorNote,
+  PageHeader,
+  Pill,
+  RankBadge,
+  Spinner,
+} from '../components/ui'
 import {
   errorMessage,
+  getCalibration,
   getGameHealth,
   getLeaderboard,
   listMatches,
 } from '../lib/api'
 import { useSelectedGame } from '../lib/GameContext'
-import type { LeaderboardEntry } from '../lib/types'
+import type { CalibrationReport, LeaderboardEntry } from '../lib/types'
+
+/** RD above this is a still-settling rating (confidence below 60%). */
+const PROVISIONAL_RD = 140
+
+function calibrationVerdict(report: CalibrationReport): string {
+  if (report.comparisons_evaluated < 20 || report.ece === null)
+    return 'not enough history to judge calibration yet'
+  if (report.ece <= 0.1) return 'well calibrated'
+  if (report.ece <= 0.25) return 'mildly miscalibrated'
+  return 'overconfident — this game is noisier than the ratings assume'
+}
 
 type SortKey = 'rank' | 'rating' | 'rd' | 'wins' | 'matches' | 'winRate'
 type MinFilter = 'auto' | 'off' | number
@@ -55,6 +77,14 @@ export default function LeaderboardPage() {
     queryKey: ['gameHealth', gameId],
     queryFn: () => getGameHealth(gameId!),
     enabled: gameId !== null,
+  })
+
+  // Walk-forward prediction quality; replayed server-side, so cache it well.
+  const { data: calibration } = useQuery({
+    queryKey: ['calibration', gameId],
+    queryFn: () => getCalibration(gameId!),
+    enabled: gameId !== null,
+    staleTime: 5 * 60_000,
   })
 
   // Total matches in this game — drives the "Auto" minimum-matches threshold.
@@ -196,7 +226,7 @@ export default function LeaderboardPage() {
                   Player
                 </th>
                 {header('Rating', 'rating')}
-                {header('± RD', 'rd')}
+                {header('Confidence', 'rd')}
                 {header('Matches', 'matches')}
                 {header('Wins', 'wins')}
                 {header('Win %', 'winRate')}
@@ -208,22 +238,28 @@ export default function LeaderboardPage() {
                   key={entry.player.id}
                   className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30"
                 >
-                  <td className="px-3 py-2.5 font-semibold tabular-nums text-slate-400">
-                    {entry.rank}
+                  <td className="px-3 py-2.5">
+                    <RankBadge rank={entry.rank} />
                   </td>
                   <td className="px-3 py-2.5">
-                    <Link
-                      to={`/players/${entry.player.id}`}
-                      className="font-medium text-indigo-300 hover:text-indigo-200 hover:underline"
-                    >
-                      {entry.player.name}
-                    </Link>
+                    <span className="flex items-center gap-2">
+                      <Avatar name={entry.player.name} size="sm" />
+                      <Link
+                        to={`/players/${entry.player.id}`}
+                        className="font-medium text-indigo-300 hover:text-indigo-200 hover:underline"
+                      >
+                        {entry.player.name}
+                      </Link>
+                      {entry.rating_info.rd > PROVISIONAL_RD && (
+                        <Pill tone="warn">provisional</Pill>
+                      )}
+                    </span>
                   </td>
                   <td className="px-3 py-2.5 text-right font-bold tabular-nums">
                     {Math.round(displayedRating(entry, displayMode))}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-400">
-                    {Math.round(entry.rating_info.rd)}
+                  <td className="px-3 py-2.5 text-right">
+                    <ConfidenceBar rd={entry.rating_info.rd} />
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
                     {statNumber(entry, 'matches_played')}
@@ -266,6 +302,20 @@ export default function LeaderboardPage() {
               </span>{' '}
               from 1500 · {health.players} rated players ·{' '}
               {health.matches} matches
+            </p>
+          )}
+          {calibration && calibration.comparisons_evaluated > 0 && (
+            <p className="px-3 pb-3 pt-1 text-xs text-slate-600">
+              Prediction quality (walk-forward over{' '}
+              <span className="tabular-nums">
+                {calibration.comparisons_evaluated}
+              </span>{' '}
+              predictions): Brier{' '}
+              <span className="tabular-nums">{calibration.brier}</span> ·{' '}
+              <span className="tabular-nums">
+                {((calibration.accuracy ?? 0) * 100).toFixed(0)}%
+              </span>{' '}
+              accuracy · {calibrationVerdict(calibration)}
             </p>
           )}
         </Card>

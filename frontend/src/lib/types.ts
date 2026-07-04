@@ -171,6 +171,8 @@ export interface ChemistryEntry {
   losses: number
   draws: number
   win_rate: number
+  /** Empirical-Bayes rate: small samples pulled toward the pooled mean. */
+  shrunk_win_rate: number
 }
 
 export interface PlayerChemistry {
@@ -178,6 +180,46 @@ export interface PlayerChemistry {
   game_id: number
   partners: ChemistryEntry[]
   rivals: ChemistryEntry[]
+}
+
+// --- Prediction & calibration ---
+
+export interface TeamPrediction {
+  player_ids: number[]
+  rating: number
+  rd: number
+  expected_score: number
+  win_probability: number
+}
+
+export interface PredictionResponse {
+  game_id: number
+  teams: TeamPrediction[]
+  favored_team_index: number
+  lopsided: boolean
+  method: string
+}
+
+export interface CalibrationBin {
+  lower: number
+  upper: number
+  count: number
+  mean_predicted: number | null
+  actual_rate: number | null
+}
+
+/** Walk-forward evaluation of a game's rating engine (GET /games/{id}/calibration). */
+export interface CalibrationReport {
+  game_id: number
+  matches_replayed: number
+  comparisons_evaluated: number
+  warmup: number
+  brier: number | null
+  accuracy: number | null
+  ece: number | null
+  bins: CalibrationBin[]
+  rating_winrate_spearman: number | null
+  spearman_players: number
 }
 
 /** Runtime deployment config from GET /config (feature flags etc.). */

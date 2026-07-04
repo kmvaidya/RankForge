@@ -8,9 +8,11 @@ import {
   Card,
   ErrorNote,
   PageHeader,
+  Pill,
   RatingDelta,
   Spinner,
   SuccessNote,
+  WinProbBar,
 } from '../components/ui'
 import {
   createMatch,
@@ -18,6 +20,7 @@ import {
   errorMessage,
   listGames,
   listPlayers,
+  predictMatch,
 } from '../lib/api'
 import { useFeature } from '../lib/features'
 import { useSelectedGame } from '../lib/GameContext'
@@ -65,12 +68,29 @@ export default function RecordMatchPage() {
     (score1.trim() === '' && score2.trim() === '') || (s1 !== null && s2 !== null)
   const [newPlayerName, setNewPlayerName] = useState('')
   const [result, setResult] = useState<Match | null>(null)
+  /** Set at submit time when the recorded winner defied the odds. */
+  const [upset, setUpset] = useState<{ team: number; odds: number } | null>(null)
 
   const { data: playersData, isPending } = useQuery({
     queryKey: ['players'],
     queryFn: listPlayers,
   })
   const players = playersData?.items ?? []
+
+  // Live pre-match odds from the rating engine, once both sides have players.
+  const canPredict = gameId !== null && team1.length > 0 && team2.length > 0
+  const prediction = useQuery({
+    queryKey: [
+      'predict',
+      gameId,
+      [...team1].sort((a, b) => a - b).join(','),
+      [...team2].sort((a, b) => a - b).join(','),
+    ],
+    queryFn: () => predictMatch(gameId!, [team1, team2]),
+    enabled: canPredict,
+    staleTime: 30_000,
+  })
+  const odds = prediction.data
 
   const addPlayer = useMutation({
     mutationFn: createPlayer,
@@ -130,6 +150,17 @@ export default function RecordMatchPage() {
 
   const handleSubmit = () => {
     if (!canSubmit) return
+    // Judge the upset from the odds as they stood at submit time.
+    if (winner !== 'draw' && odds) {
+      const winnerOdds = odds.teams[winner - 1]?.win_probability
+      setUpset(
+        winnerOdds !== undefined && winnerOdds < 0.35
+          ? { team: winner, odds: winnerOdds }
+          : null,
+      )
+    } else {
+      setUpset(null)
+    }
     const outcomeFor = (team: 1 | 2) =>
       winner === 'draw'
         ? ({ result: 'draw' } as const)
@@ -210,6 +241,12 @@ export default function RecordMatchPage() {
         <div className="mb-6 space-y-3">
           <SuccessNote>
             Match #{result.id} recorded — rating changes below.
+            {upset && (
+              <span className="ml-2 font-semibold text-amber-300">
+                Upset! Team {upset.team} won at{' '}
+                {Math.round(upset.odds * 100)}% odds.
+              </span>
+            )}
           </SuccessNote>
           <Card className="p-4">
             <div className="grid gap-2 sm:grid-cols-2">
@@ -261,6 +298,24 @@ export default function RecordMatchPage() {
             {teamBox(1, team1)}
             {teamBox(2, team2)}
           </div>
+
+          {canPredict && odds && odds.teams.length === 2 && (
+            <Card className="p-3">
+              <div className="mb-1.5 flex items-center justify-between text-xs">
+                <span className="font-semibold tabular-nums text-slate-300">
+                  {Math.round(odds.teams[0].win_probability * 100)}%
+                </span>
+                <span className="flex items-center gap-2 text-slate-500">
+                  Pre-match odds
+                  {odds.lopsided && <Pill tone="warn">lopsided matchup</Pill>}
+                </span>
+                <span className="font-semibold tabular-nums text-slate-300">
+                  {Math.round(odds.teams[1].win_probability * 100)}%
+                </span>
+              </div>
+              <WinProbBar probability={odds.teams[0].win_probability} />
+            </Card>
+          )}
 
           <Card className="p-4">
             <h2 className="mb-3 text-sm font-semibold text-slate-300">

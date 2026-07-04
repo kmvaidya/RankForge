@@ -2,9 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -57,15 +58,18 @@ function ChemistryList({
             >
               {e.player_name}
             </Link>
-            <span className="shrink-0 tabular-nums text-slate-400">
+            <span
+              className="shrink-0 tabular-nums text-slate-400"
+              title={`Raw ${(e.win_rate * 100).toFixed(0)}% over ${e.matches} matches; displayed rate is confidence-adjusted`}
+            >
               {e.wins}–{e.losses}
               {e.draws > 0 && `–${e.draws}`}{' '}
               <span
                 className={
-                  e.win_rate >= 0.5 ? 'text-emerald-400' : 'text-red-400'
+                  e.shrunk_win_rate >= 0.5 ? 'text-emerald-400' : 'text-rose-400'
                 }
               >
-                {(e.win_rate * 100).toFixed(0)}%
+                {(e.shrunk_win_rate * 100).toFixed(0)}%
               </span>
             </span>
           </li>
@@ -114,18 +118,23 @@ export default function PlayerProfilePage() {
   })
 
   // Rating-over-time series derived from before + change on each match
-  // (reversed into chronological order for the chart).
+  // (reversed into chronological order for the chart). ``band`` is the
+  // fog-of-war interval [rating − 2·RD, rating + 2·RD]: the engine's own
+  // uncertainty about where the player's true skill sits.
   const chartData = useMemo(() => {
     const matches = [...(history.data?.items ?? [])].reverse()
-    const points: { label: string; rating: number }[] = []
+    const points: { label: string; rating: number; band: [number, number] }[] =
+      []
     for (const match of matches) {
       const me = match.participants.find((p) => p.player_id === id)
       if (!me?.rating_info_before || !me.rating_info_change) continue
+      const rating =
+        me.rating_info_before.rating + me.rating_info_change.rating_change
+      const rd = me.rating_info_before.rd + me.rating_info_change.rd_change
       points.push({
         label: new Date(match.played_at).toLocaleDateString(),
-        rating: Math.round(
-          me.rating_info_before.rating + me.rating_info_change.rating_change,
-        ),
+        rating: Math.round(rating),
+        band: [Math.round(rating - 2 * rd), Math.round(rating + 2 * rd)],
       })
     }
     return points
@@ -226,7 +235,7 @@ export default function PlayerProfilePage() {
               ) : (
                 <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
+                    <ComposedChart data={chartData}>
                       <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
                       <XAxis
                         dataKey="label"
@@ -249,6 +258,15 @@ export default function PlayerProfilePage() {
                           color: '#e2e8f0',
                         }}
                       />
+                      <Area
+                        type="monotone"
+                        dataKey="band"
+                        stroke="none"
+                        fill="#6366f1"
+                        fillOpacity={0.09}
+                        activeDot={false}
+                        name="rating ± 2·RD"
+                      />
                       <Line
                         type="monotone"
                         dataKey="rating"
@@ -256,7 +274,7 @@ export default function PlayerProfilePage() {
                         strokeWidth={2}
                         dot={{ r: 2.5, fill: '#818cf8' }}
                       />
-                    </LineChart>
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               )}
@@ -344,6 +362,11 @@ export default function PlayerProfilePage() {
                     emptyHint="No opponents yet."
                   />
                 </div>
+                <p className="mt-3 text-xs text-slate-600">
+                  Rates are confidence-adjusted: small samples are pulled
+                  toward the overall mean, so a 2–0 pairing doesn't read as an
+                  unbeatable 100%. Hover a record for the raw rate.
+                </p>
               </Card>
             )}
         </>

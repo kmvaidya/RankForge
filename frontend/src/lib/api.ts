@@ -2,6 +2,7 @@ import axios from 'axios'
 
 import type {
   AppConfig,
+  CalibrationReport,
   Game,
   GameHealth,
   LeaderboardEntry,
@@ -14,6 +15,7 @@ import type {
   Player,
   PlayerChemistry,
   PlayerStats,
+  PredictionResponse,
   RatingStrategy,
   Season,
   SeasonList,
@@ -74,6 +76,17 @@ export const getLeaderboard = async (
 
 export const getGameHealth = async (gameId: number): Promise<GameHealth> =>
   (await api.get(`/games/${gameId}/health`)).data
+
+export const predictMatch = async (
+  gameId: number,
+  teams: number[][],
+): Promise<PredictionResponse> =>
+  (await api.post(`/games/${gameId}/predict`, { teams })).data
+
+export const getCalibration = async (
+  gameId: number,
+): Promise<CalibrationReport> =>
+  (await api.get(`/games/${gameId}/calibration`)).data
 
 export const getSeasons = async (gameId: number): Promise<SeasonList> =>
   (await api.get(`/games/${gameId}/seasons`)).data
