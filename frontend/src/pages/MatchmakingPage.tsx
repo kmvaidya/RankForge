@@ -75,9 +75,7 @@ export default function MatchmakingPage() {
   }
 
   const applyConfiguration = (teams: number[][]) => {
-    navigate('/record', {
-      state: { team1: teams[0] ?? [], team2: teams[1] ?? [] },
-    })
+    navigate('/record', { state: { teams } })
   }
 
   return (
@@ -236,23 +234,18 @@ export default function MatchmakingPage() {
                       <FairnessMeter value={config.fairness} />
                       {config.lopsided && <Pill tone="warn">lopsided</Pill>}
                     </div>
-                    {/* Record Match supports two teams; hide the shortcut
-                        for 3+ team configurations rather than silently
-                        dropping teams. */}
-                    {config.teams.length === 2 && (
-                      <button
-                        onClick={() =>
-                          applyConfiguration(
-                            config.teams.map((team) =>
-                              team.map((member) => member.player.id),
-                            ),
-                          )
-                        }
-                        className="rounded bg-raised px-3 py-1.5 text-xs font-semibold hover:bg-line"
-                      >
-                        Use this → Record
-                      </button>
-                    )}
+                    <button
+                      onClick={() =>
+                        applyConfiguration(
+                          config.teams.map((team) =>
+                            team.map((member) => member.player.id),
+                          ),
+                        )
+                      }
+                      className="rounded bg-raised px-3 py-1.5 text-xs font-semibold hover:bg-line"
+                    >
+                      Use this → Record
+                    </button>
                   </div>
                   <div
                     className="grid gap-3"
