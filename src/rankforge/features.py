@@ -26,6 +26,9 @@ KNOWN_FEATURES: frozenset[str] = frozenset(
         # Show a "match weight" input when recording a match, letting special
         # events count for more (or less) than a normal game.
         "match_weights",
+        # The live session runner (courts, up-next bench queue, fair
+        # rotation) — a Session page for running a night of play.
+        "session_mode",
     }
 )
 

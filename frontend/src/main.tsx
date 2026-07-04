@@ -11,6 +11,7 @@ import MatchesPage from './pages/MatchesPage'
 import MatchmakingPage from './pages/MatchmakingPage'
 import PlayerProfilePage from './pages/PlayerProfilePage'
 import RecordMatchPage from './pages/RecordMatchPage'
+import SessionPage from './pages/SessionPage'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -26,6 +27,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <LeaderboardPage /> },
       { path: 'record', element: <RecordMatchPage /> },
+      { path: 'session', element: <SessionPage /> },
       { path: 'matchmaking', element: <MatchmakingPage /> },
       { path: 'matches', element: <MatchesPage /> },
       { path: 'games', element: <GamesPage /> },

@@ -1,14 +1,21 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
+import { useFeature } from './lib/features'
+
 const links = [
   { to: '/', label: 'Leaderboard' },
   { to: '/record', label: 'Record Match' },
+  { to: '/session', label: 'Session', feature: 'session_mode' },
   { to: '/matchmaking', label: 'Matchmaking' },
   { to: '/matches', label: 'Matches' },
   { to: '/games', label: 'Games' },
 ]
 
 export default function App() {
+  const sessionMode = useFeature('session_mode')
+  const visibleLinks = links.filter(
+    (link) => !link.feature || (link.feature === 'session_mode' && sessionMode),
+  )
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
@@ -20,7 +27,7 @@ export default function App() {
             <span className="text-lg font-bold tracking-tight">RankForge</span>
           </NavLink>
           <nav className="flex flex-wrap items-center gap-1 text-sm">
-            {links.map(({ to, label }) => (
+            {visibleLinks.map(({ to, label }) => (
               <NavLink
                 key={to}
                 to={to}
