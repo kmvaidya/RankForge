@@ -21,6 +21,7 @@ from __future__ import annotations
 import itertools
 import logging
 import math
+from datetime import datetime
 from statistics import fmean
 
 from sqlalchemy import select
@@ -35,9 +36,11 @@ from rankforge.rating.glicko2_engine import (
     Glicko2Rating,
     _apply_min_swing,
     _calculate_player_scores,
+    _grow_rd,
     _margin_multiplier,
     _match_weight,
     _min_swing,
+    _rd_growth_period_days,
     _tau,
 )
 from rankforge.schemas import prediction as prediction_schema
@@ -235,11 +238,13 @@ async def walk_forward_calibration(
     engine = Glicko2Engine(tau=_tau(game))
     min_swing = _min_swing(game)
     rd_reset = season_service.season_rd_reset(game)
+    growth_period = _rd_growth_period_days(game)
     default = DEFAULT_RATING_INFO
 
     ratings: dict[int, Glicko2Rating] = {}
     appearances: dict[int, int] = {}
     score_totals: dict[int, float] = {}
+    last_played: dict[int, datetime] = {}
     predictions: list[tuple[float, float]] = []
     boundary_index = 0
 
@@ -266,6 +271,14 @@ async def walk_forward_calibration(
                     float(default["vol"]),
                 ),
             )
+            # Mirror the engine's inactivity growth so evaluated ratings
+            # match what the app would actually have shown.
+            previous = last_played.get(participant.player_id)
+            if growth_period > 0 and previous is not None:
+                elapsed_days = (match.played_at - previous).total_seconds() / 86400.0
+                ratings[participant.player_id] = _grow_rd(
+                    ratings[participant.player_id], elapsed_days, growth_period
+                )
 
         members: dict[int, list[int]] = {}
         team_score: dict[int, float] = {}
@@ -309,6 +322,7 @@ async def walk_forward_calibration(
                 score_totals.get(participant.player_id, 0.0)
                 + scores[participant.player_id]
             )
+            last_played[participant.player_id] = match.played_at
 
     brier = accuracy = ece = None
     bins: list[prediction_schema.CalibrationBin] = []

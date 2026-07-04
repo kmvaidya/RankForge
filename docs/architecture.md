@@ -88,9 +88,16 @@ Per-game rating behavior lives in `Game.rating_config` (JSON, validated in
 `schemas/game.py`): `min_swing` guarantees a minimum rating gain on a win /
 drop on a loss (an opt-in engagement floor — RD/volatility keep their pure
 Glicko-2 values), `margin_weight_factor` and `score_preset` support
-score-margin weighting and quick entry, and `leaderboard_mode` hints the
-default leaderboard display. `GET /games/{id}/health` reports the mean
-rating and its drift from the 1500 anchor as an inflation monitor.
+score-margin weighting and quick entry, `leaderboard_mode` hints the
+default leaderboard display, `tau` sets the Glicko-2 system constant, and
+`rd_growth_period_days` opts into inactivity RD growth (a returning
+player's rating is treated as less certain, one Glicko-2 idle period per
+elapsed span; elapsed time derives from stored `played_at` values, so the
+recalculation cascade replays it deterministically). `GET
+/games/{id}/health` reports the mean rating and its drift from the 1500
+anchor as an inflation monitor, and `GET /games/{id}/calibration` scores
+the engine's own predictions against real history (walk-forward Brier,
+accuracy, ECE, reliability bins).
 
 ### Feature flags (generic core vs. per-deployment extras)
 

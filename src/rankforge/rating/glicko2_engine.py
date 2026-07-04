@@ -12,6 +12,7 @@ import logging
 import math
 from dataclasses import dataclass
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rankforge.db import models
@@ -324,6 +325,87 @@ def _apply_min_swing(
     return new
 
 
+def _rd_growth_period_days(game: models.Game | None) -> float:
+    """Days per idle rating period from ``rating_config.rd_growth_period_days``.
+
+    0 (the default) disables inactivity growth. When set, a player's RD is
+    inflated before each match by the Glicko-2 idle-period rule, once per
+    ``period_days`` elapsed since their previous match in this game — a
+    returning player's rating is treated as less certain, exactly like the
+    explicit "RD decay" events in the legacy leaderboard systems.
+
+    Raises:
+        RatingCalculationError: If the stored value is not a non-negative number.
+    """
+    raw = ((game.rating_config if game else None) or {}).get(
+        "rd_growth_period_days", 0.0
+    )
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw < 0:
+        raise RatingCalculationError(
+            f"Invalid rd_growth_period_days {raw!r} in rating_config: "
+            "must be a non-negative number"
+        )
+    return float(raw)
+
+
+def _grow_rd(
+    rating: Glicko2Rating, elapsed_days: float, period_days: float
+) -> Glicko2Rating:
+    """Inflate RD for inactivity: phi' = sqrt(phi² + t·sigma²) over t idle periods.
+
+    This is Glicko-2's own no-games step (step 8 of the paper) applied
+    fractionally per elapsed period. Growth is capped at the default initial
+    RD (or the current RD if it is already higher, e.g. after a large season
+    reset) — absence makes a rating uncertain, never worse than unknown.
+    """
+    if period_days <= 0 or elapsed_days <= 0:
+        return rating
+    scale = 173.7178
+    periods = elapsed_days / period_days
+    grown = math.sqrt((rating.phi / scale) ** 2 + periods * rating.sigma**2) * scale
+    cap = max(float(models.DEFAULT_RATING_INFO["rd"]), rating.phi)
+    return Glicko2Rating(rating.mu, min(grown, cap), rating.sigma)
+
+
+async def _apply_inactivity_growth(
+    db: AsyncSession,
+    match: models.Match,
+    game: models.Game | None,
+    player_ratings: dict[int, Glicko2Rating],
+) -> None:
+    """Grow each participant's RD for time since their previous match.
+
+    Derives elapsed time purely from stored ``played_at`` values, so the
+    incremental path and the recalculation replay produce identical results.
+    Players with no prior match are left untouched (they're already at the
+    initial RD).
+    """
+    period_days = _rd_growth_period_days(game)
+    if period_days <= 0:
+        return
+    result = await db.execute(
+        select(
+            models.MatchParticipant.player_id,
+            func.max(models.Match.played_at),
+        )
+        .join(models.Match, models.MatchParticipant.match_id == models.Match.id)
+        .where(
+            models.Match.game_id == match.game_id,
+            models.Match.deleted_at.is_(None),
+            models.Match.played_at < match.played_at,
+            models.MatchParticipant.player_id.in_(list(player_ratings)),
+        )
+        .group_by(models.MatchParticipant.player_id)
+    )
+    for player_id, last_played in result.all():
+        if last_played is None:
+            continue
+        elapsed_days = (match.played_at - last_played).total_seconds() / 86400.0
+        player_ratings[player_id] = _grow_rd(
+            player_ratings[player_id], elapsed_days, period_days
+        )
+
+
 def _calculate_player_scores(match: models.Match) -> dict[int, float]:
     """
     Parses match outcomes and calculates a normalized score for each player.
@@ -429,6 +511,10 @@ async def update_ratings_for_match(db: AsyncSession, match: models.Match) -> Non
         )
 
     logger.debug("All profiles loaded", extra={"player_count": len(player_profiles)})
+
+    # Inactivity makes a rating stale: grow RD for time since each player's
+    # previous match before using it (no-op unless the game opts in).
+    await _apply_inactivity_growth(db, match, game, player_ratings)
 
     # 2. Calculate a normalized performance score for each player from the match outcome
     # This may raise NonCompetitiveMatchError or RatingCalculationError

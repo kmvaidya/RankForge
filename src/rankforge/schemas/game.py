@@ -31,8 +31,10 @@ def validate_rating_config(config: dict[str, Any]) -> dict[str, Any]:
         tau: number in (0, 3] — Glicko-2 system constant (default 0.5)
         season_rd_reset: number in [30, 500] — RD applied at season
             boundaries (default 350)
+        rd_growth_period_days: number >= 0 — days per idle "rating period";
+            a player's RD grows for time away (0/absent = off)
     """
-    for key in ("min_swing", "margin_weight_factor"):
+    for key in ("min_swing", "margin_weight_factor", "rd_growth_period_days"):
         if key in config:
             value = config[key]
             if (

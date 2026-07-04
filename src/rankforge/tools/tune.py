@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Sequence, cast
 
 from sqlalchemy import select
@@ -40,8 +41,10 @@ from rankforge.rating.glicko2_engine import (
     Glicko2Engine,
     Glicko2Rating,
     _calculate_player_scores,
+    _grow_rd,
     _margin_multiplier,
     _match_weight,
+    _rd_growth_period_days,
 )
 
 TAU_GRID = [0.3, 0.5, 0.75, 1.0, 1.2]
@@ -63,6 +66,7 @@ class ReplayMatch:
 
     id: int
     match_metadata: dict
+    played_at: datetime | None = None
     participants: list[ReplayParticipant] = field(default_factory=list)
 
 
@@ -98,6 +102,7 @@ async def load_history(game_id: int) -> tuple[list[ReplayMatch], dict]:
             ReplayMatch(
                 id=m.id,
                 match_metadata=dict(m.match_metadata or {}),
+                played_at=m.played_at,
                 participants=[
                     ReplayParticipant(p.player_id, p.team_id, dict(p.outcome))
                     for p in m.participants
@@ -121,9 +126,11 @@ def evaluate(
     engine = Glicko2Engine(tau=tau)
     ratings: dict[int, Glicko2Rating] = {}
     appearances: dict[int, int] = {}
+    last_played: dict[int, datetime] = {}
     squared_errors: list[float] = []
 
     fake_game = cast(models.Game, _ConfigCarrier(rating_config))
+    growth_period = _rd_growth_period_days(fake_game)
 
     for match in matches:
         model_match = cast(models.Match, match)
@@ -134,6 +141,13 @@ def evaluate(
             ratings.setdefault(
                 participant.player_id, Glicko2Rating(1500.0, initial_rd, 0.06)
             )
+            # Mirror the engine's inactivity growth (config-gated).
+            previous = last_played.get(participant.player_id)
+            if growth_period > 0 and previous is not None and match.played_at:
+                elapsed = (match.played_at - previous).total_seconds() / 86400.0
+                ratings[participant.player_id] = _grow_rd(
+                    ratings[participant.player_id], elapsed, growth_period
+                )
 
         new_ratings: dict[int, Glicko2Rating] = {}
         for me in match.participants:
@@ -160,6 +174,8 @@ def evaluate(
             appearances[participant.player_id] = (
                 appearances.get(participant.player_id, 0) + 1
             )
+            if match.played_at:
+                last_played[participant.player_id] = match.played_at
 
     brier = (
         sum(squared_errors) / len(squared_errors) if squared_errors else float("nan")
