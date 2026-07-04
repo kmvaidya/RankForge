@@ -80,6 +80,9 @@ class TestRatingConfigValidation:
             {"score_preset": 0},
             {"score_preset": 2.5},
             {"leaderboard_mode": "bogus"},
+            {"tau": 0},
+            {"tau": 4},
+            {"tau": "high"},
         ],
     )
     async def test_invalid_config_rejected(
@@ -146,6 +149,16 @@ class TestMinSwing:
         await _play_match(async_client, game["id"], p1["id"], p2["id"])
         gain = await _rating_of(async_client, game["id"], p1["id"]) - 1500
         assert gain > 5  # fresh 1500/350 players swing far beyond the floor
+
+
+class TestTau:
+    async def test_custom_tau_processes_matches(self, async_client: AsyncClient):
+        """A game with tuned tau rates matches normally (smoke test)."""
+        game = await _create_game(async_client, "TauGame", {"tau": 1.2})
+        p1 = await _create_player(async_client, "TauWinner")
+        p2 = await _create_player(async_client, "TauLoser")
+        await _play_match(async_client, game["id"], p1["id"], p2["id"])
+        assert await _rating_of(async_client, game["id"], p1["id"]) > 1500
 
 
 class TestGameHealth:

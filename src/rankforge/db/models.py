@@ -156,6 +156,8 @@ class Game(Base, TimestampMixin, VersionMixin, SoftDeleteMixin):
     #   margin_weight_factor: float >= 0 — scales match weight by score margin
     #   score_preset: int >= 1 — typical winning score, used by quick entry UI
     #   leaderboard_mode: "rating" | "conservative" — default leaderboard sort
+    #   tau: float in (0, 3] — Glicko-2 system constant (default 0.5); tune
+    #       with `python -m rankforge.tools.tune`
     rating_config: Mapped[dict] = mapped_column(
         JSON, default=lambda: {}, server_default="{}", nullable=False
     )

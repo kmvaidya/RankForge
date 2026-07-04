@@ -37,6 +37,14 @@ def validate_rating_config(config: dict[str, Any]) -> dict[str, Any]:
                 or value < 0
             ):
                 raise ValueError(f"{key} must be a non-negative number")
+    if "tau" in config:
+        value = config["tau"]
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not (0 < value <= 3)
+        ):
+            raise ValueError("tau must be a number in (0, 3]")
     if "score_preset" in config:
         value = config["score_preset"]
         if isinstance(value, bool) or not isinstance(value, int) or value < 1:

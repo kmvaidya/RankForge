@@ -102,8 +102,14 @@ class Glicko2Engine:
         return 1 / math.sqrt(1 + 3 * phi**2 / math.pi**2)
 
     def _E(self, mu: float, mu_j: float, phi_j: float) -> float:
-        """The E() function, expected outcome against one opponent."""
-        return 1 / (1 + math.exp(-self._g(phi_j) * (mu - mu_j)))
+        """The E() function, expected outcome against one opponent.
+
+        The exponent is clamped so extreme rating gaps (possible when
+        replaying histories with aggressive parameters) saturate to 0/1
+        instead of overflowing math.exp.
+        """
+        exponent = -self._g(phi_j) * (mu - mu_j)
+        return 1 / (1 + math.exp(min(700.0, max(-700.0, exponent))))
 
     def _compute_v(
         self,
@@ -264,6 +270,24 @@ def _margin_multiplier(match: models.Match, game: models.Game | None) -> float:
     return 1 + factor * abs(values[0] - values[1]) / total
 
 
+def _tau(game: models.Game | None) -> float:
+    """Per-game Glicko-2 system constant from ``rating_config.tau``.
+
+    Tau constrains how fast volatility can change; Glickman suggests
+    0.3–1.2. Defaults to 0.5. Tune it per game with
+    ``python -m rankforge.tools.tune``.
+
+    Raises:
+        RatingCalculationError: If the stored value is not a number in (0, 3].
+    """
+    raw = ((game.rating_config if game else None) or {}).get("tau", 0.5)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or not (0 < raw <= 3):
+        raise RatingCalculationError(
+            f"Invalid tau {raw!r} in rating_config: must be a number in (0, 3]"
+        )
+    return float(raw)
+
+
 def _min_swing(game: models.Game | None) -> float:
     """Extract the guaranteed minimum rating swing from ``Game.rating_config``.
 
@@ -382,7 +406,8 @@ async def update_ratings_for_match(db: AsyncSession, match: models.Match) -> Non
         extra={"match_id": match.id, "participant_count": len(match.participants)},
     )
 
-    engine = Glicko2Engine()
+    game = await db.get(models.Game, match.game_id)
+    engine = Glicko2Engine(tau=_tau(game))
     player_profiles: dict[int, models.GameProfile] = {}
     player_ratings: dict[int, Glicko2Rating] = {}
 
@@ -408,7 +433,6 @@ async def update_ratings_for_match(db: AsyncSession, match: models.Match) -> Non
     # 2. Calculate a normalized performance score for each player from the match outcome
     # This may raise NonCompetitiveMatchError or RatingCalculationError
     player_scores = _calculate_player_scores(match)
-    game = await db.get(models.Game, match.game_id)
     weight = _match_weight(match) * _margin_multiplier(match, game)
     min_swing = _min_swing(game)
     new_ratings: dict[int, Glicko2Rating] = {}
