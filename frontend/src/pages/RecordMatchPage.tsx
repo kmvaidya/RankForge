@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
+import BulkAddPlayers from '../components/BulkAddPlayers'
 import GamePicker from '../components/GamePicker'
 import {
   Card,
@@ -319,6 +320,7 @@ export default function RecordMatchPage() {
                 {errorMessage(addPlayer.error)}
               </p>
             )}
+            <BulkAddPlayers />
           </Card>
         </div>
 
