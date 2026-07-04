@@ -11,6 +11,7 @@ import {
   PageHeader,
   Pill,
   RankBadge,
+  SegmentedControl,
   Spinner,
 } from '../components/ui'
 import {
@@ -160,19 +161,19 @@ export default function LeaderboardPage() {
         subtitle="Players ranked by Glicko-2 rating"
         actions={
           <div className="flex flex-wrap items-center gap-4">
+            <SegmentedControl
+              size="sm"
+              options={[
+                { value: 'rating', label: 'Rating' },
+                { value: 'conservative', label: 'Floor (R−2·RD)' },
+              ]}
+              value={displayMode}
+              onChange={(v) => setDisplayMode(v as DisplayMode)}
+            />
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-mute">Display</span>
-              <select
-                value={displayMode}
-                onChange={(e) => setDisplayMode(e.target.value as DisplayMode)}
-                className="rounded border border-line-strong bg-raised px-3 py-1.5 font-medium focus:border-ember focus:outline-none"
-              >
-                <option value="rating">Rating</option>
-                <option value="conservative">Conservative (R−2·RD)</option>
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <span className="text-mute">Min matches</span>
+              <span className="font-display text-xs font-semibold uppercase tracking-wider text-faint">
+                Min matches
+              </span>
               <select
                 value={typeof minFilter === 'number' ? String(minFilter) : minFilter}
                 onChange={(e) => {
@@ -212,6 +213,49 @@ export default function LeaderboardPage() {
               : 'Record a match to put players on the board.'
           }
         />
+      )}
+
+      {rows.length >= 3 && (
+        <div className="mb-4 grid gap-3 sm:grid-cols-3">
+          {[...rows]
+            .sort((a, b) => a.rank - b.rank)
+            .slice(0, 3)
+            .map((entry) => {
+              const metal =
+                entry.rank === 1
+                  ? 'border-t-gold/70 text-gold'
+                  : entry.rank === 2
+                    ? 'border-t-silver/50 text-silver'
+                    : 'border-t-bronze/60 text-bronze'
+              const losses = statNumber(entry, 'losses')
+              const draws = statNumber(entry, 'draws')
+              return (
+                <Link
+                  key={entry.player.id}
+                  to={`/players/${entry.player.id}`}
+                  className={`flex items-center gap-3 rounded-lg border border-line border-t-2 bg-surface p-4 transition-colors hover:border-line-strong ${metal}`}
+                >
+                  <span className="font-display text-2xl font-bold">
+                    {entry.rank}
+                  </span>
+                  <Avatar name={entry.player.name} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-display text-lg font-semibold uppercase tracking-wide text-ink">
+                      {entry.player.name}
+                    </span>
+                    <span className="block font-data text-xs text-faint">
+                      {statNumber(entry, 'wins')}–{losses}
+                      {draws > 0 && `–${draws}`} ·{' '}
+                      {statNumber(entry, 'matches_played')} played
+                    </span>
+                  </span>
+                  <span className="font-data text-xl font-semibold text-ink">
+                    {Math.round(displayedRating(entry, displayMode))}
+                  </span>
+                </Link>
+              )
+            })}
+        </div>
       )}
 
       {rows.length > 0 && (

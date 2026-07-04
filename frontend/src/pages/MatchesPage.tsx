@@ -3,36 +3,52 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import {
+  Button,
   Card,
+  ConfirmButton,
   EmptyState,
   ErrorNote,
   PageHeader,
+  Pill,
   RatingDelta,
   Spinner,
   SuccessNote,
 } from '../components/ui'
 import { deleteMatch, errorMessage, listMatches } from '../lib/api'
+import { absoluteTime, relativeTime } from '../lib/format'
 import { useSelectedGame } from '../lib/GameContext'
-import { outcomeLabel } from '../lib/outcome'
-import type { Match } from '../lib/types'
+import { outcomeClass, outcomeLabel } from '../lib/outcome'
+import type { Match, Outcome } from '../lib/types'
 
 const PAGE_SIZE = 20
 
-function teamsOf(match: Match): Map<number, Match['participants']> {
+function teamsOf(match: Match): [number, Match['participants']][] {
   const teams = new Map<number, Match['participants']>()
   for (const participant of match.participants) {
     const list = teams.get(participant.team_id) ?? []
     list.push(participant)
     teams.set(participant.team_id, list)
   }
-  return teams
+  return [...teams.entries()].sort(([a], [b]) => a - b)
+}
+
+function outcomePill(outcome: Outcome) {
+  const klass = outcomeClass(outcome)
+  const label = outcomeLabel(outcome)
+  const tone =
+    klass === 'win' ? 'win' : klass === 'loss' ? 'loss' : ('draw' as const)
+  // Ranked outcomes read as their placement, colored by win/loss.
+  const text =
+    'rank' in outcome && typeof outcome.rank === 'number'
+      ? `#${outcome.rank}`
+      : label
+  return <Pill tone={tone}>{text}</Pill>
 }
 
 export default function MatchesPage() {
   const { gameId } = useSelectedGame()
   const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   // Reset pagination when switching games, otherwise a deep page offset can
@@ -57,7 +73,6 @@ export default function MatchesPage() {
   const remove = useMutation({
     mutationFn: deleteMatch,
     onSuccess: () => {
-      setConfirmDeleteId(null)
       setNotice(
         'Match deleted. Ratings for all subsequent matches were recalculated.',
       )
@@ -88,103 +103,95 @@ export default function MatchesPage() {
 
       <div className="space-y-3">
         {data?.items.map((match) => {
-          const teams = [...teamsOf(match).entries()].sort(
-            ([a], [b]) => a - b,
-          )
+          const teams = teamsOf(match)
           const metadata = match.match_metadata ?? {}
+          const teamScores = (metadata.team_scores ?? null) as Record<
+            string,
+            number
+          > | null
+          const weight =
+            typeof metadata.weight === 'number' && metadata.weight !== 1
+              ? metadata.weight
+              : null
           return (
             <Card key={match.id} className="p-4">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
-                <div className="text-mute">
-                  <span className="font-semibold text-mute">
-                    #{match.id}
-                  </span>{' '}
-                  · {new Date(match.played_at).toLocaleString()}
+                <div className="flex flex-wrap items-center gap-2 text-mute">
+                  <span className="font-data text-faint">#{match.id}</span>
+                  <span title={absoluteTime(match.played_at)}>
+                    {relativeTime(match.played_at)}
+                  </span>
                   {typeof metadata.final_score === 'string' && (
-                    <span className="ml-2 rounded bg-raised px-1.5 py-0.5 text-xs">
+                    <span className="rounded bg-raised px-1.5 py-0.5 font-data text-xs">
                       {metadata.final_score}
                     </span>
                   )}
+                  {typeof metadata.session_name === 'string' && (
+                    <Pill tone="flag">{metadata.session_name}</Pill>
+                  )}
+                  {weight !== null && <Pill tone="warn">weight ×{weight}</Pill>}
                 </div>
-                {confirmDeleteId === match.id ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-loss">
-                      Delete and recalculate?
-                    </span>
-                    <button
-                      onClick={() => remove.mutate(match.id)}
-                      disabled={remove.isPending}
-                      className="rounded border border-loss/40 bg-loss/10 px-2.5 py-1 text-xs font-semibold text-loss hover:bg-loss/20"
-                    >
-                      {remove.isPending ? 'Deleting…' : 'Confirm'}
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="rounded bg-raised px-2.5 py-1 text-xs hover:bg-line"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setConfirmDeleteId(match.id)}
-                    className="rounded bg-raised px-2.5 py-1 text-xs text-mute hover:bg-loss/10 hover:text-loss"
-                  >
-                    Delete
-                  </button>
-                )}
+                <ConfirmButton
+                  prompt="Delete and recalculate?"
+                  confirmLabel="Delete"
+                  busyLabel="Deleting…"
+                  busy={remove.isPending}
+                  onConfirm={() => remove.mutate(match.id)}
+                >
+                  Delete
+                </ConfirmButton>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div
+                className="grid gap-2"
+                style={{
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                }}
+              >
                 {teams.map(([teamId, members]) => (
-                  <div
-                    key={teamId}
-                    className="rounded bg-raised px-3 py-2"
-                  >
-                    <p className="mb-1 font-display text-xs font-semibold uppercase tracking-wider text-faint">
-                      Team {teamId}
+                  <div key={teamId} className="rounded bg-raised px-3 py-2">
+                    <p className="mb-1 flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 font-display text-xs font-semibold uppercase tracking-wider text-faint">
+                        {members.length === 1
+                          ? members[0].player.name
+                          : `Team ${teamId}`}
+                        {members[0] && outcomePill(members[0].outcome)}
+                      </span>
+                      {teamScores &&
+                        typeof teamScores[String(teamId)] === 'number' && (
+                          <span className="font-data text-sm font-semibold text-ink">
+                            {teamScores[String(teamId)]}
+                          </span>
+                        )}
                     </p>
                     <ul className="space-y-0.5 text-sm">
-                      {members.map((participant) => {
-                        const label = outcomeLabel(participant.outcome)
-                        return (
-                          <li
-                            key={participant.id}
-                            className="flex items-center justify-between"
+                      {members.map((participant) => (
+                        <li
+                          key={participant.id}
+                          className="flex items-center justify-between"
+                        >
+                          <Link
+                            to={`/players/${participant.player.id}`}
+                            className="font-medium hover:text-ember"
                           >
-                            <span>
-                              <Link
-                                to={`/players/${participant.player.id}`}
-                                className="font-medium hover:underline"
-                              >
-                                {participant.player.name}
-                              </Link>
-                              <span
-                                className={`ml-2 text-xs font-semibold uppercase ${
-                                  label === 'win'
-                                    ? 'text-win'
-                                    : label === 'loss'
-                                      ? 'text-loss'
-                                      : 'text-faint'
-                                }`}
-                              >
-                                {label}
-                              </span>
-                            </span>
-                            {participant.rating_info_change && (
-                              <RatingDelta
-                                value={
-                                  participant.rating_info_change.rating_change
-                                }
-                              />
-                            )}
-                          </li>
-                        )
-                      })}
+                            {participant.player.name}
+                          </Link>
+                          {participant.rating_info_change && (
+                            <RatingDelta
+                              value={participant.rating_info_change.rating_change}
+                            />
+                          )}
+                        </li>
+                      ))}
                     </ul>
                   </div>
                 ))}
               </div>
+              {typeof metadata.notes === 'string' && metadata.notes !== '' && (
+                <p className="mt-2 text-xs italic text-faint">
+                  {metadata.notes}
+                </p>
+              )}
             </Card>
           )
         })}
@@ -192,24 +199,19 @@ export default function MatchesPage() {
 
       {data && data.total > PAGE_SIZE && (
         <div className="mt-6 flex items-center justify-between text-sm">
-          <button
+          <Button
             onClick={() => setPage((p) => Math.max(0, p - 1))}
             disabled={page === 0}
-            className="rounded bg-raised px-3 py-1.5 font-medium hover:bg-line disabled:opacity-40"
           >
             ← Newer
-          </button>
-          <span className="text-faint">
+          </Button>
+          <span className="font-data text-faint">
             {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, data.total)}{' '}
             of {data.total}
           </span>
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            disabled={!data.has_more}
-            className="rounded bg-raised px-3 py-1.5 font-medium hover:bg-line disabled:opacity-40"
-          >
+          <Button onClick={() => setPage((p) => p + 1)} disabled={!data.has_more}>
             Older →
-          </button>
+          </Button>
         </div>
       )}
     </div>
