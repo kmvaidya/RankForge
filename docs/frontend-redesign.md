@@ -228,7 +228,7 @@ Each phase: implement → `npm run build` + oxlint green → commit → next.
 - [x] **P3 — Session v2**: formats, station nouns, draws, FFA ranking,
   restyle. (`feat`)
 - [x] **P4 — Leaderboard + Matches redesign.** (`feat`)
-- [ ] **P5 — Profile + Games + Matchmaking polish**, N-team send-to-record.
+- [x] **P5 — Profile + Games + Matchmaking polish**, N-team send-to-record.
   (`feat`)
 - [ ] **P6 — E2E pass**: Chrome click-through against live data, mobile
   viewport check, fixes; lockfile cross-platform check (`docker build`).

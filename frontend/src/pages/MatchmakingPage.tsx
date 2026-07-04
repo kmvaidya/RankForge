@@ -1,14 +1,21 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import {
+  Avatar,
+  Button,
   Card,
+  CardTitle,
   EmptyState,
   ErrorNote,
   FairnessMeter,
+  Input,
   PageHeader,
   Pill,
+  PlayerChip,
+  SegmentedControl,
+  Select,
   Spinner,
 } from '../components/ui'
 import { errorMessage, generateTeams, listPlayers } from '../lib/api'
@@ -23,6 +30,7 @@ export default function MatchmakingPage() {
 
   const [selected, setSelected] = useState<number[]>([])
   const [teamCount, setTeamCount] = useState(2)
+  const [search, setSearch] = useState('')
   const [pairs, setPairs] = useState<{ kind: PairKind; a: number; b: number }[]>([])
   const [pairA, setPairA] = useState<number | ''>('')
   const [pairB, setPairB] = useState<number | ''>('')
@@ -33,8 +41,15 @@ export default function MatchmakingPage() {
     queryKey: ['players'],
     queryFn: listPlayers,
   })
-  const players = playersData?.items ?? []
+  const players = useMemo(() => playersData?.items ?? [], [playersData])
   const nameOf = (id: number) => players.find((p) => p.id === id)?.name ?? `#${id}`
+
+  const filteredPlayers = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return q === ''
+      ? players
+      : players.filter((p) => p.name.toLowerCase().includes(q))
+  }, [players, search])
 
   const generate = useMutation({
     mutationFn: generateTeams,
@@ -44,9 +59,7 @@ export default function MatchmakingPage() {
   const togglePlayer = (id: number) => {
     setResult(null)
     setSelected((current) =>
-      current.includes(id)
-        ? current.filter((x) => x !== id)
-        : [...current, id],
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
     )
   }
 
@@ -85,65 +98,65 @@ export default function MatchmakingPage() {
         subtitle="Generate the fairest possible teams from tonight's players"
       />
 
-      <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         <div className="space-y-4">
           <Card className="p-4">
-            <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
-              Who's playing? ({selected.length} selected)
-            </h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <CardTitle>Who's playing? ({selected.length})</CardTitle>
+            </div>
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search players…"
+              className="mb-3 py-1.5"
+            />
             {isPending && <Spinner />}
-            <div className="flex max-h-72 flex-col gap-1 overflow-y-auto pr-1">
-              {players.map((player) => (
-                <label
+            <div className="flex max-h-80 flex-wrap content-start gap-1.5 overflow-y-auto pr-1">
+              {filteredPlayers.map((player) => (
+                <PlayerChip
                   key={player.id}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-raised"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(player.id)}
-                    onChange={() => togglePlayer(player.id)}
-                    className="accent-ember"
-                  />
-                  <span className="font-medium">{player.name}</span>
-                </label>
+                  name={player.name}
+                  active={selected.includes(player.id)}
+                  onClick={() => togglePlayer(player.id)}
+                />
               ))}
             </div>
           </Card>
 
           <Card className="p-4">
-            <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">Options</h2>
-            <label className="flex items-center justify-between text-sm">
-              <span className="text-mute">Teams</span>
-              <select
+            <CardTitle className="mb-3">Options</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-display text-xs font-semibold uppercase tracking-wider text-faint">
+                Teams
+              </span>
+              <SegmentedControl
+                size="sm"
+                options={[2, 3, 4].map((n) => ({ value: n, label: n }))}
                 value={teamCount}
-                onChange={(e) => setTeamCount(Number(e.target.value))}
-                className="rounded border border-line-strong bg-raised px-3 py-1.5"
-              >
-                {[2, 3, 4].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
+                onChange={(n) => {
+                  setResult(null)
+                  setTeamCount(n)
+                }}
+              />
+            </div>
 
             <div className="mt-4">
               <h3 className="mb-2 font-display text-xs font-semibold uppercase tracking-wider text-faint">
                 Constraints
               </h3>
               <div className="flex flex-wrap items-center gap-1.5 text-sm">
-                <select
+                <Select
                   value={pairKind}
                   onChange={(e) => setPairKind(e.target.value as PairKind)}
-                  className="rounded border border-line-strong bg-raised px-2 py-1 text-xs"
+                  className="w-auto px-2 py-1 text-xs"
                 >
                   <option value="together">Keep together</option>
                   <option value="apart">Keep apart</option>
-                </select>
-                <select
+                </Select>
+                <Select
                   value={pairA}
                   onChange={(e) => setPairA(e.target.value ? Number(e.target.value) : '')}
-                  className="rounded border border-line-strong bg-raised px-2 py-1 text-xs"
+                  className="w-auto px-2 py-1 text-xs"
                 >
                   <option value="">Player…</option>
                   {selected.map((id) => (
@@ -151,11 +164,11 @@ export default function MatchmakingPage() {
                       {nameOf(id)}
                     </option>
                   ))}
-                </select>
-                <select
+                </Select>
+                <Select
                   value={pairB}
                   onChange={(e) => setPairB(e.target.value ? Number(e.target.value) : '')}
-                  className="rounded border border-line-strong bg-raised px-2 py-1 text-xs"
+                  className="w-auto px-2 py-1 text-xs"
                 >
                   <option value="">Player…</option>
                   {selected.map((id) => (
@@ -163,14 +176,14 @@ export default function MatchmakingPage() {
                       {nameOf(id)}
                     </option>
                   ))}
-                </select>
-                <button
+                </Select>
+                <Button
+                  size="sm"
                   onClick={addPair}
                   disabled={pairA === '' || pairB === '' || pairA === pairB}
-                  className="rounded bg-raised px-2.5 py-1 text-xs font-medium hover:bg-line disabled:opacity-40"
                 >
                   Add
-                </button>
+                </Button>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {pairs.map((pair, index) => (
@@ -193,17 +206,18 @@ export default function MatchmakingPage() {
               </div>
             </div>
 
-            <button
+            <Button
+              variant="primary"
               onClick={handleGenerate}
               disabled={
                 gameId === null ||
                 selected.length < Math.max(teamCount, 2) ||
                 generate.isPending
               }
-              className="mt-4 w-full rounded bg-ember py-2.5 font-semibold text-ember-ink transition-colors hover:bg-ember-bright disabled:cursor-not-allowed disabled:opacity-40"
+              className="mt-4 w-full"
             >
-              {generate.isPending ? 'Optimizing…' : 'Generate Teams'}
-            </button>
+              {generate.isPending ? 'Optimizing…' : 'Generate teams'}
+            </Button>
           </Card>
         </div>
 
@@ -221,20 +235,23 @@ export default function MatchmakingPage() {
           {result && (
             <>
               <p className="text-xs text-faint">
-                {result.configurations_evaluated.toLocaleString()} configurations
-                evaluated via {result.method}.
+                <span className="font-data">
+                  {result.configurations_evaluated.toLocaleString()}
+                </span>{' '}
+                configurations evaluated via {result.method}.
               </p>
               {result.configurations.map((config, index) => (
                 <Card key={index} className="p-4">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-bold text-mute">
+                      <span className="font-display text-sm font-bold uppercase tracking-wider text-mute">
                         Option {index + 1}
                       </span>
                       <FairnessMeter value={config.fairness} />
                       {config.lopsided && <Pill tone="warn">lopsided</Pill>}
                     </div>
-                    <button
+                    <Button
+                      size="sm"
                       onClick={() =>
                         applyConfiguration(
                           config.teams.map((team) =>
@@ -242,43 +259,43 @@ export default function MatchmakingPage() {
                           ),
                         )
                       }
-                      className="rounded bg-raised px-3 py-1.5 text-xs font-semibold hover:bg-line"
                     >
                       Use this → Record
-                    </button>
+                    </Button>
                   </div>
                   <div
                     className="grid gap-3"
                     style={{
-                      gridTemplateColumns: `repeat(${Math.min(
-                        config.teams.length,
-                        4,
-                      )}, minmax(0, 1fr))`,
+                      gridTemplateColumns:
+                        'repeat(auto-fit, minmax(180px, 1fr))',
                     }}
                   >
                     {config.teams.map((team, teamIndex) => (
                       <div
                         key={teamIndex}
-                        className="rounded border border-line p-3"
+                        className="rounded-lg border border-line p-3"
                       >
                         <div className="mb-2 flex items-baseline justify-between">
                           <span className="font-display text-xs font-semibold uppercase tracking-wider text-faint">
                             Team {teamIndex + 1}
                           </span>
-                          <span className="text-xs font-data text-mute">
+                          <span className="font-data text-xs text-mute">
                             μ {Math.round(config.team_ratings[teamIndex].mu)} ·{' '}
                             {(config.win_probabilities[teamIndex] * 100).toFixed(0)}
-                            % win
+                            %
                           </span>
                         </div>
                         <ul className="space-y-1">
                           {team.map((member) => (
                             <li
                               key={member.player.id}
-                              className="flex items-center justify-between text-sm"
+                              className="flex items-center justify-between gap-2 text-sm"
                             >
-                              <span className="font-medium">
-                                {member.player.name}
+                              <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                                <Avatar name={member.player.name} size="sm" />
+                                <span className="truncate">
+                                  {member.player.name}
+                                </span>
                               </span>
                               <span className="font-data text-faint">
                                 {Math.round(member.rating)}

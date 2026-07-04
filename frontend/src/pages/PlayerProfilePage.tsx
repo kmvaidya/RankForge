@@ -13,12 +13,16 @@ import {
 } from 'recharts'
 
 import {
+  Avatar,
   Card,
+  CardTitle,
   EmptyState,
   ErrorNote,
-  PageHeader,
+  Pill,
   RatingDelta,
+  SegmentedControl,
   Spinner,
+  StatCard,
 } from '../components/ui'
 import {
   errorMessage,
@@ -26,6 +30,7 @@ import {
   getPlayerMatches,
   getPlayerStats,
 } from '../lib/api'
+import { relativeTime } from '../lib/format'
 import { outcomeClass } from '../lib/outcome'
 import type { ChemistryEntry } from '../lib/types'
 
@@ -46,32 +51,39 @@ function ChemistryList({
       {entries.length === 0 && (
         <p className="text-sm text-faint">{emptyHint}</p>
       )}
-      <ul className="space-y-1.5">
+      <ul className="space-y-2">
         {entries.slice(0, 6).map((e) => (
           <li
             key={e.player_id}
-            className="flex items-center justify-between gap-2 text-sm"
+            className="text-sm"
+            title={`Raw ${(e.win_rate * 100).toFixed(0)}% over ${e.matches} matches; displayed rate is confidence-adjusted`}
           >
-            <Link
-              to={`/players/${e.player_id}`}
-              className="truncate font-medium text-ink hover:text-ember"
-            >
-              {e.player_name}
-            </Link>
-            <span
-              className="shrink-0 font-data text-mute"
-              title={`Raw ${(e.win_rate * 100).toFixed(0)}% over ${e.matches} matches; displayed rate is confidence-adjusted`}
-            >
-              {e.wins}–{e.losses}
-              {e.draws > 0 && `–${e.draws}`}{' '}
-              <span
-                className={
-                  e.shrunk_win_rate >= 0.5 ? 'text-win' : 'text-loss'
-                }
+            <div className="flex items-center justify-between gap-2">
+              <Link
+                to={`/players/${e.player_id}`}
+                className="flex min-w-0 items-center gap-2 font-medium hover:text-ember"
               >
-                {(e.shrunk_win_rate * 100).toFixed(0)}%
+                <Avatar name={e.player_name} size="sm" />
+                <span className="truncate">{e.player_name}</span>
+              </Link>
+              <span className="shrink-0 font-data text-mute">
+                {e.wins}–{e.losses}
+                {e.draws > 0 && `–${e.draws}`}{' '}
+                <span
+                  className={e.shrunk_win_rate >= 0.5 ? 'text-win' : 'text-loss'}
+                >
+                  {(e.shrunk_win_rate * 100).toFixed(0)}%
+                </span>
               </span>
-            </span>
+            </div>
+            <div className="mt-1 h-1 overflow-hidden rounded-full bg-raised">
+              <div
+                className={`h-full rounded-full ${
+                  e.shrunk_win_rate >= 0.5 ? 'bg-win/70' : 'bg-loss/70'
+                }`}
+                style={{ width: `${Math.round(e.shrunk_win_rate * 100)}%` }}
+              />
+            </div>
           </li>
         ))}
       </ul>
@@ -149,10 +161,22 @@ export default function PlayerProfilePage() {
 
   return (
     <div>
-      <PageHeader
-        title={data.player_name}
-        subtitle={`${data.total_matches} matches · ${data.total_wins}W ${data.total_losses}L ${data.total_draws}D · ${(data.overall_win_rate * 100).toFixed(0)}% win rate`}
-      />
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        <Avatar name={data.player_name} size="lg" />
+        <div>
+          <h1 className="font-display text-3xl font-bold uppercase tracking-wide">
+            {data.player_name}
+          </h1>
+          <p className="mt-0.5 text-sm text-mute">
+            Across all games:{' '}
+            <span className="font-data">
+              {data.total_matches} matches · {data.total_wins}W{' '}
+              {data.total_losses}L {data.total_draws}D ·{' '}
+              {(data.overall_win_rate * 100).toFixed(0)}%
+            </span>
+          </p>
+        </div>
+      </div>
 
       {games.length === 0 && (
         <EmptyState
@@ -163,68 +187,44 @@ export default function PlayerProfilePage() {
 
       {games.length > 0 && (
         <>
-          <div className="mb-4 flex flex-wrap gap-2">
-            {games.map((gameStats) => (
-              <button
-                key={gameStats.game.id}
-                onClick={() => setSelectedGameId(gameStats.game.id)}
-                className={`rounded px-3 py-1.5 text-sm font-medium transition-colors ${
-                  gameStats.game.id === activeGameId
-                    ? 'bg-ember text-ember-ink'
-                    : 'bg-raised text-mute hover:bg-line'
-                }`}
-              >
-                {gameStats.game.name}
-              </button>
-            ))}
+          <div className="mb-4">
+            <SegmentedControl
+              options={games.map((gameStats) => ({
+                value: gameStats.game.id,
+                label: gameStats.game.name,
+              }))}
+              value={activeGameId ?? games[0].game.id}
+              onChange={setSelectedGameId}
+            />
           </div>
 
           {activeGame && (
             <div className="mb-6 grid gap-3 sm:grid-cols-4">
-              <Card className="p-4">
-                <p className="text-xs uppercase tracking-wide text-faint">
-                  Rating
-                </p>
-                <p className="mt-1 text-2xl font-bold font-data">
-                  {Math.round(activeGame.rating_info.rating)}
-                  <span className="ml-2 text-sm font-normal text-faint">
-                    ± {Math.round(activeGame.rating_info.rd)}
-                  </span>
-                </p>
-              </Card>
-              <Card className="p-4">
-                <p className="text-xs uppercase tracking-wide text-faint">
-                  Matches
-                </p>
-                <p className="mt-1 text-2xl font-bold font-data">
-                  {activeGame.matches_played}
-                </p>
-              </Card>
-              <Card className="p-4">
-                <p className="text-xs uppercase tracking-wide text-faint">
-                  Record
-                </p>
-                <p className="mt-1 text-2xl font-bold font-data">
-                  {activeGame.wins}–{activeGame.losses}
-                  {activeGame.draws > 0 && `–${activeGame.draws}`}
-                </p>
-              </Card>
-              <Card className="p-4">
-                <p className="text-xs uppercase tracking-wide text-faint">
-                  Win rate
-                </p>
-                <p className="mt-1 text-2xl font-bold font-data">
-                  {(activeGame.win_rate * 100).toFixed(0)}%
-                </p>
-              </Card>
+              <StatCard
+                label="Rating"
+                value={Math.round(activeGame.rating_info.rating)}
+                caption={`± ${Math.round(activeGame.rating_info.rd)} RD`}
+              />
+              <StatCard label="Matches" value={activeGame.matches_played} />
+              <StatCard
+                label="Record"
+                value={
+                  <>
+                    {activeGame.wins}–{activeGame.losses}
+                    {activeGame.draws > 0 && `–${activeGame.draws}`}
+                  </>
+                }
+              />
+              <StatCard
+                label="Win rate"
+                value={`${(activeGame.win_rate * 100).toFixed(0)}%`}
+              />
             </div>
           )}
 
           <div className="grid gap-6 lg:grid-cols-2">
             <Card className="p-4">
-              <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
-                Rating history
-              </h2>
+              <CardTitle className="mb-3">Rating history</CardTitle>
               {history.isPending && <Spinner />}
               {chartData.length < 2 ? (
                 !history.isPending && (
@@ -281,9 +281,7 @@ export default function PlayerProfilePage() {
             </Card>
 
             <Card className="p-4">
-              <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
-                Recent matches
-              </h2>
+              <CardTitle className="mb-3">Recent matches</CardTitle>
               {recentMatches.length === 0 && !history.isPending && (
                 <p className="py-8 text-center text-sm text-faint">
                   No matches for this game.
@@ -300,26 +298,22 @@ export default function PlayerProfilePage() {
                       key={match.id}
                       className="flex items-center justify-between gap-2 py-2 text-sm"
                     >
-                      <div className="min-w-0">
-                        <span
-                          className={`mr-2 inline-block w-10 rounded px-1.5 py-0.5 text-center text-xs font-bold uppercase ${
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Pill
+                          tone={
                             klass === 'win'
-                              ? 'bg-win/10 text-win'
+                              ? 'win'
                               : klass === 'loss'
-                                ? 'bg-loss/10 text-loss'
-                                : 'bg-raised text-mute'
-                          }`}
+                                ? 'loss'
+                                : 'draw'
+                          }
                         >
-                          {klass === 'win'
-                            ? 'W'
-                            : klass === 'loss'
-                              ? 'L'
-                              : klass === 'draw'
-                                ? 'D'
-                                : '—'}
-                        </span>
-                        <span className="text-mute">
-                          {new Date(match.played_at).toLocaleDateString()} · vs{' '}
+                          {me && 'rank' in me.outcome
+                            ? `#${me.outcome.rank}`
+                            : (klass ?? '—')}
+                        </Pill>
+                        <span className="truncate text-mute">
+                          {relativeTime(match.played_at)} · vs{' '}
                           {match.participants
                             .filter((p) => p.player_id !== id)
                             .map((p) => p.player.name)
@@ -342,14 +336,14 @@ export default function PlayerProfilePage() {
             (chemistry.data.partners.length > 0 ||
               chemistry.data.rivals.length > 0) && (
               <Card className="mt-6 p-4">
-                <h2 className="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-mute">
+                <CardTitle className="mb-3">
                   Partners &amp; head-to-head
                   {activeGame && (
-                    <span className="ml-2 font-normal text-faint">
+                    <span className="ml-2 normal-case tracking-normal text-faint">
                       {activeGame.game.name}
                     </span>
                   )}
-                </h2>
+                </CardTitle>
                 <div className="grid gap-6 sm:grid-cols-2">
                   <ChemistryList
                     title="Best partners (record together)"
@@ -365,7 +359,7 @@ export default function PlayerProfilePage() {
                 <p className="mt-3 text-xs text-faint">
                   Rates are confidence-adjusted: small samples are pulled
                   toward the overall mean, so a 2–0 pairing doesn't read as an
-                  unbeatable 100%. Hover a record for the raw rate.
+                  unbeatable 100%. Hover a row for the raw rate.
                 </p>
               </Card>
             )}
