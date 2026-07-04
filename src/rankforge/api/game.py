@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from rankforge.db.models import Game, GameProfile, Player
+from rankforge.db.models import Game, GameProfile, Match, Player
 from rankforge.db.session import get_db
 from rankforge.schemas import game as game_schema
 from rankforge.schemas.common import RatingInfo
@@ -270,6 +270,53 @@ async def get_leaderboard(
         skip=skip,
         limit=limit,
         has_more=(skip + len(entries)) < total,
+    )
+
+
+@router.get("/{game_id}/health", response_model=game_schema.GameHealth)
+async def get_game_health(
+    game_id: int, db: AsyncSession = Depends(get_db)
+) -> game_schema.GameHealth:
+    """
+    Rating-system health for a game: mean rating and drift from the 1500
+    anchor. Sustained drift signals inflation/deflation. Anonymous players
+    are excluded, matching the leaderboard.
+    """
+    game = await db.get(Game, game_id)
+    if not game or game.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Game with id {game_id} not found",
+        )
+
+    profiles_query = (
+        select(GameProfile.rating_info)
+        .where(GameProfile.game_id == game_id)
+        .where(GameProfile.deleted_at.is_(None))
+        .join(Player, Player.id == GameProfile.player_id)
+        .where(Player.deleted_at.is_(None))
+        .where(Player.is_anonymous == False)  # noqa: E712
+    )
+    ratings = [
+        info.get("rating", 1500.0)
+        for info in (await db.execute(profiles_query)).scalars().all()
+    ]
+
+    match_count_query = (
+        select(func.count())
+        .select_from(Match)
+        .where(Match.game_id == game_id)
+        .where(Match.deleted_at.is_(None))
+    )
+    matches = (await db.execute(match_count_query)).scalar_one()
+
+    mean = sum(ratings) / len(ratings) if ratings else 1500.0
+    return game_schema.GameHealth(
+        game_id=game_id,
+        players=len(ratings),
+        matches=matches,
+        mean_rating=round(mean, 2),
+        rating_drift=round(abs(1500.0 - mean), 2),
     )
 
 

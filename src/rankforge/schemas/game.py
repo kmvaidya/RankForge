@@ -3,8 +3,9 @@
 """Pydantic schemas for the Game resource."""
 
 from enum import Enum
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ===============================================
@@ -17,6 +18,35 @@ class RatingStrategy(str, Enum):
     DUMMY = "dummy"
 
 
+def validate_rating_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Validate the known rating_config keys; unknown keys pass through.
+
+    Known keys:
+        min_swing: number >= 0 — guaranteed minimum rating gain on a win /
+            drop on a loss (0/absent = pure Glicko-2)
+        margin_weight_factor: number >= 0 — scales match weight by score margin
+        score_preset: int >= 1 — typical winning score, used by quick entry UI
+        leaderboard_mode: "rating" | "conservative"
+    """
+    for key in ("min_swing", "margin_weight_factor"):
+        if key in config:
+            value = config[key]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or value < 0
+            ):
+                raise ValueError(f"{key} must be a non-negative number")
+    if "score_preset" in config:
+        value = config["score_preset"]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError("score_preset must be a positive integer")
+    if "leaderboard_mode" in config:
+        if config["leaderboard_mode"] not in ("rating", "conservative"):
+            raise ValueError("leaderboard_mode must be 'rating' or 'conservative'")
+    return config
+
+
 # ===============================================
 # Base Schema: Defines shared attributes
 # ===============================================
@@ -26,6 +56,9 @@ class GameBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=200)
     rating_strategy: RatingStrategy
     description: str | None = Field(None, max_length=1000)
+    rating_config: dict[str, Any] = Field(default_factory=dict)
+
+    _validate_config = field_validator("rating_config")(validate_rating_config)
 
 
 # ===============================================
@@ -48,6 +81,12 @@ class GameUpdate(BaseModel):
     name: str | None = Field(None, min_length=2, max_length=200)
     rating_strategy: RatingStrategy | None = None
     description: str | None = Field(None, max_length=1000)
+    rating_config: dict[str, Any] | None = None
+
+    @field_validator("rating_config")
+    @classmethod
+    def _validate_config(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        return None if v is None else validate_rating_config(v)
 
 
 # ===============================================
@@ -62,3 +101,21 @@ class GameRead(GameBase):
     # This config allows Pydantic to read data from ORM models.
     # It tells Pydantic to access fields like `game.id` instead of `game['id']`.
     model_config = ConfigDict(from_attributes=True)
+
+
+# ===============================================
+# Health Schema: rating-system drift monitoring
+# ===============================================
+class GameHealth(BaseModel):
+    """Rating-system health metrics for a game.
+
+    A zero-sum-ish rating system should keep its mean near the 1500 anchor;
+    sustained drift signals inflation/deflation (e.g. from weighted matches
+    or players entering/leaving at non-average skill).
+    """
+
+    game_id: int
+    players: int
+    matches: int
+    mean_rating: float
+    rating_drift: float = Field(description="Absolute distance of mean from 1500")

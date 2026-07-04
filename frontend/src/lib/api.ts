@@ -3,6 +3,7 @@ import axios from 'axios'
 import type {
   AppConfig,
   Game,
+  GameHealth,
   LeaderboardEntry,
   Match,
   MatchCreate,
@@ -67,6 +68,9 @@ export const getLeaderboard = async (
 ): Promise<Paginated<LeaderboardEntry>> =>
   (await api.get(`/games/${gameId}/leaderboard`, { params: { limit: 100 } }))
     .data
+
+export const getGameHealth = async (gameId: number): Promise<GameHealth> =>
+  (await api.get(`/games/${gameId}/health`)).data
 
 // --- Players ---
 

@@ -150,6 +150,16 @@ class Game(Base, TimestampMixin, VersionMixin, SoftDeleteMixin):
     rating_strategy: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Per-game rating-behavior knobs. Known keys (all optional):
+    #   min_swing: float >= 0 — guaranteed minimum rating gain on a win /
+    #       drop on a loss (0/absent = pure Glicko-2)
+    #   margin_weight_factor: float >= 0 — scales match weight by score margin
+    #   score_preset: int >= 1 — typical winning score, used by quick entry UI
+    #   leaderboard_mode: "rating" | "conservative" — default leaderboard sort
+    rating_config: Mapped[dict] = mapped_column(
+        JSON, default=lambda: {}, server_default="{}", nullable=False
+    )
+
     # A game has many profiles associated with it
     game_profiles: Mapped[List["GameProfile"]] = relationship(
         back_populates="game", cascade="all, delete-orphan"

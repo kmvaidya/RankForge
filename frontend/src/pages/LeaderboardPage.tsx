@@ -4,12 +4,27 @@ import { Link } from 'react-router-dom'
 
 import GamePicker from '../components/GamePicker'
 import { Card, EmptyState, ErrorNote, PageHeader, Spinner } from '../components/ui'
-import { errorMessage, getLeaderboard, listMatches } from '../lib/api'
+import {
+  errorMessage,
+  getGameHealth,
+  getLeaderboard,
+  listMatches,
+} from '../lib/api'
 import { useSelectedGame } from '../lib/GameContext'
 import type { LeaderboardEntry } from '../lib/types'
 
 type SortKey = 'rank' | 'rating' | 'rd' | 'wins' | 'matches' | 'winRate'
 type MinFilter = 'auto' | 'off' | number
+type DisplayMode = 'rating' | 'conservative'
+
+/** The rating a row is ranked and displayed by. Conservative mode uses the
+ *  Glicko lower bound (rating − 2·RD): unproven players rank low until
+ *  their uncertainty shrinks. */
+function displayedRating(entry: LeaderboardEntry, mode: DisplayMode): number {
+  return mode === 'conservative'
+    ? entry.rating_info.rating - 2 * entry.rating_info.rd
+    : entry.rating_info.rating
+}
 
 function statNumber(entry: LeaderboardEntry, key: string): number {
   const value = entry.stats?.[key]
@@ -28,10 +43,17 @@ export default function LeaderboardPage() {
   const [sortKey, setSortKey] = useState<SortKey>('rank')
   const [descending, setDescending] = useState(false)
   const [minFilter, setMinFilter] = useState<MinFilter>('auto')
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('rating')
 
   const { data, isPending, error } = useQuery({
     queryKey: ['leaderboard', gameId],
     queryFn: () => getLeaderboard(gameId!),
+    enabled: gameId !== null,
+  })
+
+  const { data: health } = useQuery({
+    queryKey: ['gameHealth', gameId],
+    queryFn: () => getGameHealth(gameId!),
     enabled: gameId !== null,
   })
 
@@ -54,16 +76,19 @@ export default function LeaderboardPage() {
     const eligible = items.filter(
       (e) => statNumber(e, 'matches_played') >= threshold,
     )
-    // Re-rank the visible board so it reads 1..n by rating.
+    // Re-rank the visible board so it reads 1..n by the displayed rating.
     const reranked = [...eligible]
-      .sort((a, b) => b.rating_info.rating - a.rating_info.rating)
+      .sort(
+        (a, b) =>
+          displayedRating(b, displayMode) - displayedRating(a, displayMode),
+      )
       .map((e, i) => ({ ...e, rank: i + 1 }))
     const value = (e: LeaderboardEntry): number => {
       switch (sortKey) {
         case 'rank':
           return e.rank
         case 'rating':
-          return e.rating_info.rating
+          return displayedRating(e, displayMode)
         case 'rd':
           return e.rating_info.rd
         case 'wins':
@@ -78,7 +103,7 @@ export default function LeaderboardPage() {
       descending ? value(b) - value(a) : value(a) - value(b),
     )
     return { rows: sorted, hiddenCount: items.length - eligible.length }
-  }, [data, sortKey, descending, threshold])
+  }, [data, sortKey, descending, threshold, displayMode])
 
   const toggleSort = (key: SortKey) => {
     if (key === sortKey) setDescending(!descending)
@@ -106,6 +131,17 @@ export default function LeaderboardPage() {
         subtitle="Players ranked by Glicko-2 rating"
         actions={
           <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-slate-400">Display</span>
+              <select
+                value={displayMode}
+                onChange={(e) => setDisplayMode(e.target.value as DisplayMode)}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 font-medium focus:border-indigo-500 focus:outline-none"
+              >
+                <option value="rating">Rating</option>
+                <option value="conservative">Conservative (R−2·RD)</option>
+              </select>
+            </label>
             <label className="flex items-center gap-2 text-sm">
               <span className="text-slate-400">Min matches</span>
               <select
@@ -184,7 +220,7 @@ export default function LeaderboardPage() {
                     </Link>
                   </td>
                   <td className="px-3 py-2.5 text-right font-bold tabular-nums">
-                    {Math.round(entry.rating_info.rating)}
+                    {Math.round(displayedRating(entry, displayMode))}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums text-slate-400">
                     {Math.round(entry.rating_info.rd)}
@@ -202,6 +238,13 @@ export default function LeaderboardPage() {
               ))}
             </tbody>
           </table>
+          {displayMode === 'conservative' && (
+            <p className="px-3 pt-3 text-xs text-slate-500">
+              Conservative display: each rating is its Glicko lower bound
+              (rating − 2·RD) — a player must play enough to shrink their
+              uncertainty before ranking high.
+            </p>
+          )}
           {hiddenCount > 0 && (
             <p className="px-3 pt-3 text-xs text-slate-500">
               {hiddenCount} provisional player{hiddenCount === 1 ? '' : 's'}{' '}
@@ -209,6 +252,20 @@ export default function LeaderboardPage() {
               {threshold === 1 ? 'match' : 'matches'}) — Glicko-2 ratings are
               unreliable at low sample sizes. Set the filter to Off to show
               everyone.
+            </p>
+          )}
+          {health && (
+            <p className="px-3 pt-2 text-xs text-slate-600">
+              League health: mean rating{' '}
+              <span className="tabular-nums">
+                {Math.round(health.mean_rating)}
+              </span>{' '}
+              · drift{' '}
+              <span className="tabular-nums">
+                {health.rating_drift.toFixed(0)}
+              </span>{' '}
+              from 1500 · {health.players} rated players ·{' '}
+              {health.matches} matches
             </p>
           )}
         </Card>

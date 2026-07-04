@@ -14,11 +14,20 @@ export interface Player {
 
 export type RatingStrategy = 'glicko2' | 'dummy'
 
+export interface GameHealth {
+  game_id: number
+  players: number
+  matches: number
+  mean_rating: number
+  rating_drift: number
+}
+
 export interface Game {
   id: number
   name: string
   rating_strategy: RatingStrategy
   description: string | null
+  rating_config?: Record<string, unknown>
 }
 
 export interface RatingChange {

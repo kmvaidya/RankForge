@@ -216,6 +216,42 @@ def _match_weight(match: models.Match) -> float:
     return float(raw)
 
 
+def _min_swing(game: models.Game | None) -> float:
+    """Extract the guaranteed minimum rating swing from ``Game.rating_config``.
+
+    When set (> 0), a win always gains at least this many rating points and a
+    loss always drops at least this many — an engagement floor borrowed from
+    house-rule ladders. 0 (the default) leaves pure Glicko-2 behavior.
+
+    Raises:
+        RatingCalculationError: If the stored value is not a non-negative number.
+    """
+    raw = ((game.rating_config if game else None) or {}).get("min_swing", 0.0)
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or raw < 0:
+        raise RatingCalculationError(
+            f"Invalid min_swing {raw!r} in rating_config: must be a non-negative number"
+        )
+    return float(raw)
+
+
+def _apply_min_swing(
+    old: Glicko2Rating, new: Glicko2Rating, score: float, min_swing: float
+) -> Glicko2Rating:
+    """Enforce the minimum win/loss swing on the rating (mu) only.
+
+    Draws (score == 0.5) are left untouched; RD and volatility always keep
+    their Glicko-2 values so uncertainty stays honest.
+    """
+    if min_swing <= 0 or score == 0.5:
+        return new
+    change = new.mu - old.mu
+    if score > 0.5 and change < min_swing:
+        return Glicko2Rating(old.mu + min_swing, new.phi, new.sigma)
+    if score < 0.5 and change > -min_swing:
+        return Glicko2Rating(old.mu - min_swing, new.phi, new.sigma)
+    return new
+
+
 def _calculate_player_scores(match: models.Match) -> dict[int, float]:
     """
     Parses match outcomes and calculates a normalized score for each player.
@@ -325,6 +361,8 @@ async def update_ratings_for_match(db: AsyncSession, match: models.Match) -> Non
     # This may raise NonCompetitiveMatchError or RatingCalculationError
     player_scores = _calculate_player_scores(match)
     weight = _match_weight(match)
+    game = await db.get(models.Game, match.game_id)
+    min_swing = _min_swing(game)
     new_ratings: dict[int, Glicko2Rating] = {}
 
     # 3. For each player, calculate their new rating
@@ -353,9 +391,12 @@ async def update_ratings_for_match(db: AsyncSession, match: models.Match) -> Non
             # reflecting the player's overall performance in the match.
             opponents_data.append((opponent_rating, p1_score))
 
-        # Calculate the new rating
+        # Calculate the new rating (then enforce any configured minimum swing)
         current_rating = player_ratings[p1.player_id]
-        new_ratings[p1.player_id] = engine.rate(current_rating, opponents_data, weight)
+        rated = engine.rate(current_rating, opponents_data, weight)
+        new_ratings[p1.player_id] = _apply_min_swing(
+            current_rating, rated, p1_score, min_swing
+        )
 
     # 4. Persist the new ratings to the database
     for p in match.participants:
